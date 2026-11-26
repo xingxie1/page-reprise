@@ -8,7 +8,7 @@
 
 ## 在 Windows 上开始
 
-从同一发布页下载 `PageReprise-0.3.0-Windows-x64.exe`，双击安装后从桌面或开始菜单打开「循页」。程序自带运行环境，适用于 Windows 10 / 11 x64。[下载循页](https://github.com/xingxie1/page-reprise/releases/latest)
+从同一发布页下载 `PageReprise-0.3.1-Windows-x64.exe`，双击安装后从桌面或开始菜单打开「循页」。程序自带运行环境，适用于 Windows 10 / 11 x64。[下载循页](https://github.com/xingxie1/page-reprise/releases/latest)
 
 - 按 **Win + Shift + S** 截图，切回循页按 **Ctrl + V**。也可以把图片文件拖进窗口。第一批进入题干，同一道题再粘贴或拖入会追加到答案。录题页上的按钮支持分别选择题干或答案文件。
 - 窗口较宽时，左侧选题、右侧看详情。单击题图进入全屏，滚轮缩放，放大后按住鼠标拖动，**Esc** 回到原处。
@@ -16,14 +16,14 @@
 
 ## 在平板和手机上开始
 
-1. 使用有仓库访问权的 GitHub 账号，从[循页 0.3.0 发布页](https://github.com/xingxie1/page-reprise/releases/tag/v0.3.0)下载 `PageReprise-0.3.0.apk`。也可以把同一个 APK 直接传到两台设备安装。第一次打开就能在本机录题和复习。
+1. 使用有仓库访问权的 GitHub 账号，从[循页 0.3.1 发布页](https://github.com/xingxie1/page-reprise/releases/tag/v0.3.1)下载 `PageReprise-0.3.1.apk`。也可以把同一个 APK 直接传到两台设备安装。第一次打开就能在本机录题和复习。
 2. 在循页点「录入一道题」，或在系统截图、相册的分享菜单中选「循页」。选科后保存；长题可有多张题图和答案图，可裁切、排序、补图。Notein 只需能分享图片，不能直分享时用系统截图即可。
 3. 次日北京时间 00:00 起，首页对应科目的本会显示待办。做题时答案折叠，猜对按没做对处理。仅打开、稍后、手动抽练都不改变排期。第二次清零须确认，题目只移到同科永久重点本。
 4. 多设备同步使用**自己的 Supabase 服务**。按[云端启用指南](docs/cloud.md)配置，再在 Windows、手机和平板登录同一个受邀账号。从本机试用转入账号须手动确认，好友使用不同账号。设置内可以导出或预览恢复备份，夸克网盘只用于手动存放该文件。
 
 录题页接收第一批分享图时会填入题干。保持同一道题在编辑中，再分享的截图会追加到答案。多页题干可以用图下的「移到题干」调整。点预览图可全屏阅读，双击切换倍率，点右上角关闭。
 
-普通本的题目详情提供「删除错题」。删除后进入本科回收站，满 168 小时到期。期限内恢复会带回原图、复习记录和原到期日。永久重点本继续永久保留。在云端使用本版，请将自己的设备都更新到 0.3.0，并完成[回收站云端配置](docs/cloud.md#启用回收站的云端清理)。
+普通本的题目详情提供「删除错题」。删除后进入本科回收站，满 168 小时到期。期限内恢复会带回原图、复习记录和原到期日。永久重点本继续永久保留。在云端使用本版，请将自己的设备都更新到 0.3.1，并完成[回收站云端配置](docs/cloud.md#启用回收站的云端清理)。
 
 ## 构建和私下分发
 
@@ -38,7 +38,7 @@
 | Android 测试设备验收 | `.\gradlew.bat :app:connectedDebugAndroidTest` |
 | 用固定私钥签出可持续覆盖安装的 APK | `.\scripts\sign-local.ps1 -UnsignedApk app/build/outputs/apk/release/app-release-unsigned.apk` |
 
-macOS / Linux 使用 `./gradlew`。Windows 签名工具把成品放在 `dist/PageReprise-0.3.0.apk`，用 `apksigner` 验签并报告摘要。首次签名在当前 Windows 用户的 `%LOCALAPPDATA%/PageReprise/signing` 创建专用密钥，口令用 DPAPI 保护。请离线备份签名密钥，并将口令另存在自己的密码管理器；仅复制 DPAPI 文件不能在另一台电脑解密。不要把签名材料放进 Git。后续升级使用同一私钥和递增的版本号。
+macOS / Linux 使用 `./gradlew`。Windows 签名工具把成品放在 `dist/PageReprise-0.3.1.apk`，用 `apksigner` 验签并报告摘要。首次签名在当前 Windows 用户的 `%LOCALAPPDATA%/PageReprise/signing` 创建专用密钥，口令用 DPAPI 保护。请离线备份签名密钥，并将口令另存在自己的密码管理器；仅复制 DPAPI 文件不能在另一台电脑解密。不要把签名材料放进 Git。后续升级使用同一私钥和递增的版本号。
 
 ## 双端验收
 

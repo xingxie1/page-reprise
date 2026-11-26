@@ -19,6 +19,11 @@ jobs:
         run: .\gradlew.bat :core:test :desktop:test
       - name: Build self-contained Windows program
         run: .\scripts\package-windows.ps1 -Format Portable
+      - name: Verify Windows schedules and collects expired guest cards
+        run: |
+          $exe = Get-ChildItem desktop/build/packaging -Recurse -Filter '循页.exe' | Select-Object -First 1
+          python -X utf8 checks/windows_cleanup.py $exe.FullName
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Open the packaged program on a clean Windows profile
         shell: pwsh
         run: |
@@ -28,11 +33,11 @@ jobs:
             $deadline = [DateTime]::UtcNow.AddSeconds(60)
             do {
               Start-Sleep -Milliseconds 300
-              $app.Refresh()
-            } until ($app.HasExited -or $app.MainWindowTitle -eq '循页' -or [DateTime]::UtcNow -ge $deadline)
-            if ($app.HasExited -or $app.MainWindowTitle -ne '循页') { throw 'Failed to open the installed desktop window.' }
+              $window = Get-Process -Name $exe.BaseName -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe.FullName -and $_.MainWindowTitle -eq '循页' } | Select-Object -First 1
+            } until ($window -or [DateTime]::UtcNow -ge $deadline)
+            if (!$window) { throw 'Failed to open the installed desktop window.' }
           } finally {
-            if (!$app.HasExited) { $null = $app.CloseMainWindow(); $null = $app.WaitForExit(10000) }
+            if ($window) { $null = $window.CloseMainWindow(); $null = $window.WaitForExit(10000) }
           }
       - uses: actions/upload-artifact@v4
         with:

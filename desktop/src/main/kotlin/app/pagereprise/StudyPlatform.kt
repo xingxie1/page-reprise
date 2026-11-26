@@ -75,7 +75,7 @@ class StudyPlatform(val directory: File) {
             </Task>""".trimIndent()
         val descriptor = File.createTempFile("trash-", ".xml", cacheDir)
         try {
-            descriptor.writeText(xml, Charsets.UTF_16)
+            descriptor.writeText("\uFEFF" + xml, Charsets.UTF_16LE)
             val process = ProcessBuilder("schtasks.exe", "/Create", "/F", "/TN", task, "/XML", descriptor.absolutePath)
                 .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
             if (process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0) scheduled = deadline
