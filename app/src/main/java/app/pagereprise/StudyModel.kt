@@ -13,6 +13,7 @@ import java.time.LocalDate
 
 enum class Page { HOME, BOOK, REVIEW, DETAIL, EDITOR, SETTINGS, ISSUES, TRASH }
 data class Turn(val card: String, val round: String)
+data class AnswerShare(val editorId: String, val serial: Int)
 data class Editor(val draft: String = newId(), val card: String? = null, val subject: String = "",
     val body: Body = Body(), val parents: List<String> = emptyList(), val back: Page = Page.HOME)
 
@@ -55,6 +56,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     var split by mutableStateOf(prefs.getBoolean("split:" + owner, false)); private set
     var preview by mutableStateOf<Staged?>(null); private set
     var mediaRevision by mutableIntStateOf(0); private set
+    var answerShare by mutableStateOf<AnswerShare?>(null); private set
     val serviceAddress get() = prefs.getString("service-site", "").orEmpty()
     val publishableKey get() = prefs.getString("service-public-key", "").orEmpty()
     private var refreshNumber = 0
@@ -230,7 +232,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
             if (page != Page.EDITOR) newEditor()
             val answers = editor.body.pictures.isNotEmpty()
             appendImages(photos, answers)
-            message = if (answers) "已添加到本题答案图" else "已添加到本题题干图"
+            if (answers) answerShare = AnswerShare(editor.draft, (answerShare?.serial ?: 0) + 1)
         }
     }
     fun movePhoto(fromAnswers: Boolean, index: Int) {

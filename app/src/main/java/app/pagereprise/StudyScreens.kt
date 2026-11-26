@@ -3,6 +3,9 @@ package app.pagereprise
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -18,13 +21,17 @@ import app.pagereprise.core.*
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun EditorScreen(model: StudyModel) {
     val editor = model.editor
     var answerPick by rememberSaveable { mutableStateOf(false) }
     var crop by remember { mutableStateOf<Pair<Boolean,Int>?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> model.importImages(uris, answerPick) }
+    val answerHeading = remember(editor.draft) { BringIntoViewRequester() }
+    LaunchedEffect(model.answerShare, editor.draft) {
+        if (model.answerShare?.editorId == editor.draft) answerHeading.bringIntoView()
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Heading(if (editor.card == null) "录入一道题" else "编辑原题", "先保存干净的题面，答案和来源可以以后补。")
         if (editor.card == null) Sheet(Modifier.fillMaxWidth()) {
@@ -39,7 +46,8 @@ internal fun EditorScreen(model: StudyModel) {
         for (answers in listOf(false, true)) {
             val images = if (answers) editor.body.answers else editor.body.pictures
             Sheet(Modifier.fillMaxWidth()) {
-                Text(if (answers) "答案图 · 复习时折叠" else "题干图 · 按顺序展示", fontWeight = FontWeight.Bold)
+                Text(if (answers) "答案图 · 复习时折叠" else "题干图 · 按顺序展示",
+                    modifier = if (answers) Modifier.bringIntoViewRequester(answerHeading) else Modifier, fontWeight = FontWeight.Bold)
                 images.forEachIndexed { index, hash ->
                     Photo(model, hash, "第 " + (index + 1) + " 张")
                     FlowRow {

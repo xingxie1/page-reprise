@@ -70,9 +70,14 @@ internal fun Photo(model: StudyModel, hash: String, label: String) {
         val view = LocalView.current
         DisposableEffect(view) {
             val window = (view.parent as? DialogWindowProvider)?.window
-            if (window != null) WindowCompat.getInsetsController(window, view).apply {
-                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                hide(WindowInsetsCompat.Type.systemBars())
+            if (window != null) {
+                val full = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                window.setLayout(full, full)
+                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
+                WindowCompat.getInsetsController(window, view).apply {
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.systemBars())
+                }
             }
             onDispose { }
         }

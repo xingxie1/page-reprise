@@ -152,19 +152,41 @@ class NotebookTest {
             assertEquals(listOf(hash), model.editor.body.pictures)
             val tasks = (activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).appTasks
             assertEquals(1, tasks.count { it.taskInfo.baseActivity?.className == MainActivity::class.java.name })
-            screen.onAllNodesWithContentDescription("第 1 张").onFirst().performScrollTo().performClick()
-            val viewer = screen.onNodeWithTag("photo-viewer").assertIsDisplayed().fetchSemanticsNode()
-            val host = activity.window.decorView
-            assertTrue("Viewer width " + viewer.size.width + " / " + host.width, viewer.size.width >= host.width - 2)
-            assertTrue("Viewer height " + viewer.size.height + " / " + host.height, viewer.size.height >= host.height - 2)
-            screen.onNodeWithContentDescription("关闭大图").performClick()
-            screen.onNodeWithText("移到题干").performScrollTo().performClick()
-            assertEquals(2, model.editor.body.pictures.size)
-            assertTrue(model.editor.body.answers.isEmpty())
+            screen.onNodeWithText("移到题干").performScrollTo().assertIsEnabled().performClick()
+            screen.waitUntil(10000) { model.editor.body.pictures.size == 2 && model.editor.body.answers.isEmpty() }
             screen.onNodeWithText("仅存为本机草稿").performScrollTo().performClick()
             screen.waitUntil(10000) { model.drafts.any { it.draftId == draftId } }
             assertEquals(previous, model.cards.size)
             assertTrue(model.media.file(hash).length() > 0)
         } finally { resolver.delete(uri, null, null) }
+    }
+
+    @Test fun imageOpensFromTheBookAtFullWindowSize() {
+        val activity = screen.activity
+        val model = ViewModelProvider(activity)[StudyModel::class.java]
+        val store = Store(activity.application)
+        try {
+            val image = Bitmap.createBitmap(640, 240, Bitmap.Config.ARGB_8888)
+            image.eraseColor(android.graphics.Color.WHITE)
+            val bytes = java.io.ByteArrayOutputStream().apply { image.compress(Bitmap.CompressFormat.JPEG, 90, this) }.toByteArray()
+            val hash = digest(bytes)
+            val title = "看图 · " + newId().take(8)
+            val original = Event.create("math", Body(title = title, pictures = listOf(hash)))
+            model.media.accept(hash, bytes.inputStream())
+            runBlocking { store.merge(model.owner, listOf(original), true) }
+            screen.runOnIdle { model.foreground(); model.openBook("math", false) }
+            screen.waitUntil(10000) { model.book.any { it.id == original.id } }
+            screen.onNodeWithTag("book-list").performScrollToNode(hasText(title))
+            screen.onNodeWithText(title).performClick()
+            val label = "题干图，点按放大"
+            screen.waitUntil(10000) { screen.onAllNodesWithContentDescription(label).fetchSemanticsNodes().isNotEmpty() }
+            screen.onNodeWithContentDescription(label).performScrollTo().performClick()
+            val viewer = screen.onNodeWithTag("photo-viewer").assertIsDisplayed().fetchSemanticsNode()
+            val host = activity.window.decorView
+            assertTrue("Viewer width " + viewer.size.width + " / " + host.width, viewer.size.width >= host.width - 2)
+            assertTrue("Viewer height " + viewer.size.height + " / " + host.height, viewer.size.height >= host.height - 2)
+            screen.onNodeWithContentDescription("关闭大图").performClick()
+            screen.onNodeWithTag("photo-viewer").assertDoesNotExist()
+        } finally { store.db.close() }
     }
 }

@@ -232,7 +232,7 @@ private fun Book(model: StudyModel) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 760.dp
         Row(Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(Modifier.weight(1f).testTag("book-list"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { Heading(if (model.focus) "永久重点本" else "普通错题本", Subjects.name(model.subject) + " · 共 " + book.size + " 题") }
                 item {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
