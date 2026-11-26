@@ -25,7 +25,7 @@ internal fun sampledImage(file: File, limit: Int): BufferedImage =
         } finally { reader.dispose() }
     }
 
-internal fun decodePhoto(file: File, limit: Int) = sampledImage(file, limit).toComposeImageBitmap()
+internal fun decodePhoto(file: File, limit: Int) = runCatching { sampledImage(file, limit).toComposeImageBitmap() }.getOrNull()
 
 class Media(directory: File, owner: String) : MediaFiles(directory, File(directory, "cache").apply { mkdirs() }, owner) {
     override fun normalize(file: File): String {

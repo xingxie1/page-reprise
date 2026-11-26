@@ -66,7 +66,18 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     val selectable get() = if (split) Subjects.main.keys.filterNot { it == "cs" } + Subjects.parts.keys else subjects
     val book get() = Library.book(cards, subject, focus)
 
-    init { scope.launch { reload() } }
+    private var expiryJob: Job? = null
+
+    init {
+        scope.launch { reload() }
+        scope.launch {
+            while (isActive) {
+                today = StudyDays.today()
+                val midnight = today.plusDays(1).atStartOfDay(StudyDays.zone).toInstant().toEpochMilli()
+                delay((midnight - System.currentTimeMillis()).coerceIn(30L, 60000L))
+            }
+        }
+    }
 
     private suspend fun reload() {
         val scope = owner
@@ -79,6 +90,13 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         if (owner != scope || ticket != refreshNumber) return
         cards = snapshot.first.filterNot { it.trashed }
         discarded = snapshot.first.filter { (it.expiresAt ?: 0L) > System.currentTimeMillis() }
+        expiryJob?.cancel()
+        discarded.mapNotNull { it.expiresAt }.minOrNull()?.let { next ->
+            expiryJob = this.scope.launch {
+                delay((next - System.currentTimeMillis()).coerceAtLeast(1))
+                if (owner == scope) reload()
+            }
+        }
         drafts = snapshot.second
         pending = snapshot.third
         lastSync = prefs.getLong("synced:" + scope, 0)
@@ -101,7 +119,6 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         scope.launch { reload() }
         sync()
     }
-    fun refreshTrash() { scope.launch { reload() } }
     fun openTrash() { if (!focus) page = Page.TRASH }
     fun deleteCard(card: Card) = perform {
         store.act(owner, card.id) { fresh ->

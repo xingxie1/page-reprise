@@ -1,6 +1,6 @@
 package app.pagereprise
 
-import android.app.Activity
+import android.view.Window
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -48,7 +48,7 @@ internal fun rememberBackupImporter(receive: (InputFile) -> Unit): () -> Unit {
 
 @Composable internal fun PlatformBackHandler(enabled: Boolean, back: () -> Unit) = BackHandler(enabled, back)
 @Composable internal fun CaptureTools(model: StudyModel) = Unit
-internal fun Modifier.mousePhotoGestures(scale: () -> Float, change: (Float, Offset) -> Unit) = this
+@Composable internal fun Modifier.mousePhotoGestures(scale: () -> Float, change: (Float, Offset) -> Unit) = this
 
 internal fun decodePhoto(file: File, limit: Int): androidx.compose.ui.graphics.ImageBitmap? {
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -58,9 +58,11 @@ internal fun decodePhoto(file: File, limit: Int): androidx.compose.ui.graphics.I
     return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
 }
 
+internal val LocalAndroidWindow = staticCompositionLocalOf<Window> { error("Missing activity window") }
+
 @Composable
 internal fun ImmersivePhoto() {
-    val window = (LocalContext.current as Activity).window
+    val window = LocalAndroidWindow.current
     val view = LocalView.current
     DisposableEffect(window, view) {
         val controller = WindowCompat.getInsetsController(window, view)

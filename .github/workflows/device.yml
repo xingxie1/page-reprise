@@ -1,5 +1,13 @@
 name: Android device acceptance
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'app/**'
+      - 'core/**'
+      - 'shared/**'
+      - 'gradle.properties'
+      - '.github/workflows/device.yml'
 permissions:
   contents: read
 jobs:

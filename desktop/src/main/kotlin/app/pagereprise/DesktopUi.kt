@@ -128,22 +128,27 @@ internal fun ImmersivePhoto() {
     }
 }
 
-internal fun Modifier.mousePhotoGestures(scale: () -> Float, change: (Float, Offset) -> Unit) = pointerInput(Unit) {
-    awaitPointerEventScope {
-        while (true) {
-            val event = awaitPointerEvent()
-            val mouse = event.changes.firstOrNull { it.type == PointerType.Mouse } ?: continue
-            when {
-                event.type == PointerEventType.Scroll -> {
-                    val factor = 1.20f.pow(-mouse.scrollDelta.y.coerceIn(-8f, 8f))
-                    val next = (scale() * factor).coerceIn(1f, 6f)
-                    val anchor = Offset(size.width / 2f, size.height / 2f) - mouse.position
-                    change(factor, anchor * (next / scale() - 1f))
-                    mouse.consume()
-                }
-                event.type == PointerEventType.Move && mouse.pressed && scale() > 1f -> {
-                    change(1f, mouse.position - mouse.previousPosition)
-                    mouse.consume()
+@Composable
+internal fun Modifier.mousePhotoGestures(scale: () -> Float, change: (Float, Offset) -> Unit): Modifier {
+    val zoom by rememberUpdatedState(scale)
+    val transform by rememberUpdatedState(change)
+    return pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent()
+                val mouse = event.changes.firstOrNull { it.type == PointerType.Mouse } ?: continue
+                when {
+                    event.type == PointerEventType.Scroll -> {
+                        val factor = 1.20f.pow(-mouse.scrollDelta.y.coerceIn(-8f, 8f))
+                        val next = (zoom() * factor).coerceIn(1f, 6f)
+                        val anchor = Offset(size.width / 2f, size.height / 2f) - mouse.position
+                        transform(factor, anchor * (next / zoom() - 1f))
+                        mouse.consume()
+                    }
+                    event.type == PointerEventType.Move && mouse.pressed && zoom() > 1f -> {
+                        transform(1f, mouse.position - mouse.previousPosition)
+                        mouse.consume()
+                    }
                 }
             }
         }

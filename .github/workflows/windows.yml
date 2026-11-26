@@ -1,0 +1,47 @@
+name: Windows desktop
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      SKIKO_RENDER_API: SOFTWARE
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run shared rules and Windows storage and UI tests
+        run: .\gradlew.bat :core:test :desktop:test
+      - name: Build self-contained Windows program
+        run: .\scripts\package-windows.ps1 -Format Portable
+      - name: Open the packaged program on a clean Windows profile
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem desktop/build/packaging -Recurse -Filter '循页.exe' | Select-Object -First 1
+          $app = Start-Process -FilePath $exe.FullName -PassThru
+          try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(60)
+            do {
+              Start-Sleep -Milliseconds 300
+              $app.Refresh()
+            } until ($app.HasExited -or $app.MainWindowTitle -eq '循页' -or [DateTime]::UtcNow -ge $deadline)
+            if ($app.HasExited -or $app.MainWindowTitle -ne '循页') { throw 'Failed to open the installed desktop window.' }
+          } finally {
+            if (!$app.HasExited) { $null = $app.CloseMainWindow(); $null = $app.WaitForExit(10000) }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: page-reprise-windows-x64
+          path: dist/*.zip
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: desktop-test-results
+          path: desktop/build/reports/tests/
+          retention-days: 7

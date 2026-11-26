@@ -33,7 +33,7 @@ try {
         & tar.exe -a -cf $output -C $stage $product
         if ($LASTEXITCODE) { throw 'Creating the portable ZIP failed.' }
     } else {
-        & $pack --type exe --dest $stage --name $product --app-version $version --vendor PageReprise --app-image $image --icon 'desktop/package/bookmark.ico' --win-per-user-install --install-dir 'Programs\PageReprise' --win-shortcut --win-menu --win-menu-group $product --win-upgrade-uuid 'dcf346c4-c09b-43fd-9589-8525ce79174c'
+        & $pack --type exe --dest $stage --name $product --app-version $version --vendor PageReprise --app-image $image --icon 'desktop/package/bookmark.ico' --win-per-user-install --install-dir 'PageRepriseDesktop' --win-shortcut --win-menu --win-menu-group $product --win-upgrade-uuid 'dcf346c4-c09b-43fd-9589-8525ce79174c'
         if ($LASTEXITCODE) { throw 'Windows installer build failed.' }
         $output = Join-Path $dist "PageReprise-$version-Windows-x64.exe"
         Copy-Item -LiteralPath (Join-Path $stage "$product-$version.exe") -Destination $output -Force

@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.activity.viewModels
 import app.pagereprise.core.*
 
@@ -17,7 +18,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         savedInstanceState?.getString("currentEditor")?.let { model.resumeEditor(it, savedInstanceState.getString("editorOwner")) }
-        setContent { RepriseApp(model) }
+        setContent { CompositionLocalProvider(LocalAndroidWindow provides window) { RepriseApp(model) } }
         val photos = sharedImages(intent)
         initialShare = photos.takeIf { it.isNotEmpty() }?.let { digest(it.joinToString("\n").toByteArray()) }
         if (initialShare != null && initialShare != savedInstanceState?.getString("initialShare")) model.shared(photos.map { inputFile(it) })

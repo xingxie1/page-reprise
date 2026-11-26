@@ -17,7 +17,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pagereprise.core.*
-import kotlinx.coroutines.delay
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -40,20 +39,6 @@ fun RepriseApp(model: StudyModel) {
         PlatformBackHandler(model.page != Page.HOME && model.viewedPhoto == null) { navigateBack() }
         LaunchedEffect(model.message) {
             model.message?.let { text -> snacks.currentSnackbarData?.dismiss(); snacks.showSnackbar(text); if (model.message == text) model.message = null }
-        }
-        LaunchedEffect(Unit) {
-            while (true) {
-                model.today = StudyDays.today()
-                val nextMidnight = model.today.plusDays(1).atStartOfDay(StudyDays.zone).toInstant().toEpochMilli()
-                delay((nextMidnight - System.currentTimeMillis()).coerceIn(30L, 60000L))
-            }
-        }
-        val expires = model.discarded.minOfOrNull { requireNotNull(it.expiresAt) }
-        LaunchedEffect(expires) {
-            if (expires != null) {
-                delay((expires - System.currentTimeMillis()).coerceAtLeast(1))
-                model.refreshTrash()
-            }
         }
         Box(Modifier.fillMaxSize()) {
             val background = if (model.viewedPhoto == null) Modifier else Modifier.clearAndSetSemantics { }
