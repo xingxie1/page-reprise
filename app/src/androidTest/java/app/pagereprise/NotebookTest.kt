@@ -10,6 +10,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import app.pagereprise.core.*
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -33,7 +34,18 @@ class NotebookTest {
         screen.waitUntil(10000) { model.cards.any { it.body.title == title } }
         screen.activityRule.scenario.recreate()
         screen.onNodeWithTag("book:math:false").performClick()
-        screen.onNodeWithText(title).assertExists()
+        screen.onNodeWithText(title).performClick()
+        screen.onNodeWithText("题目详情").assertIsDisplayed()
+        val wide = when (InstrumentationRegistry.getArguments().getString("layout")) {
+            "tablet" -> true
+            "phone" -> false
+            else -> screen.activity.resources.configuration.screenWidthDp >= 760
+        }
+        if (wide) {
+            screen.onNodeWithText("只搜索这一本").assertExists()
+        } else {
+            screen.onNodeWithText("只搜索这一本").assertDoesNotExist()
+        }
         val item = model.cards.first { it.body.title == title }
         assertEquals(StudyDays.today().plusDays(1), item.plan.due)
         assertFalse(item.plan.focus)
