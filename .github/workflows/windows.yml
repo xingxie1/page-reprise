@@ -21,13 +21,13 @@ jobs:
         run: .\scripts\package-windows.ps1 -Format Portable
       - name: Verify Windows schedules and collects expired guest cards
         run: |
-          $exe = Get-ChildItem desktop/build/packaging -Recurse -Filter '循页.exe' | Select-Object -First 1
+          $exe = Get-ChildItem desktop/build/packaging -Recurse -Filter 'PageReprise.exe' | Select-Object -First 1
           python -X utf8 checks/windows_cleanup.py $exe.FullName
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Open the packaged program on a clean Windows profile
         shell: pwsh
         run: |
-          $exe = Get-ChildItem desktop/build/packaging -Recurse -Filter '循页.exe' | Select-Object -First 1
+          $exe = Get-ChildItem desktop/build/packaging -Recurse -Filter 'PageReprise.exe' | Select-Object -First 1
           $app = Start-Process -FilePath $exe.FullName -PassThru
           try {
             $deadline = [DateTime]::UtcNow.AddSeconds(60)

@@ -31,9 +31,10 @@ try {
     & .\gradlew.bat :desktop:installDist
     if ($LASTEXITCODE) { throw 'Desktop build failed.' }
     $product = '循页'
-    $image = Join-Path $stage $product
+    $launcher = 'PageReprise'
+    $image = Join-Path $stage $launcher
     $modules = 'java.base,java.desktop,java.sql,java.logging,java.management,java.naming,java.prefs,java.xml,java.net.http,java.security.jgss,jdk.crypto.ec,jdk.unsupported,jdk.charsets,jdk.localedata'
-    Invoke-Jpackage @('--type', 'app-image', '--dest', $stage, '--name', $product, '--app-version', $version,
+    Invoke-Jpackage @('--type', 'app-image', '--dest', $stage, '--name', $launcher, '--app-version', $version,
         '--vendor', 'PageReprise', '--description', '循页错题本', '--input', 'desktop/build/install/desktop/lib',
         '--main-jar', 'desktop.jar', '--main-class', 'app.pagereprise.DesktopKt', '--icon', 'desktop/package/bookmark.ico',
         '--add-modules', $modules, '--java-options', '-Dfile.encoding=UTF-8')
@@ -45,7 +46,7 @@ try {
     } else {
         Invoke-Jpackage @('--type', 'exe', '--dest', $stage, '--name', $product, '--app-version', $version,
             '--vendor', 'PageReprise', '--app-image', $image, '--icon', 'desktop/package/bookmark.ico',
-            '--win-per-user-install', '--install-dir', 'PageRepriseDesktop', '--win-shortcut', '--win-menu',
+            '--resource-dir', 'desktop/package', '--win-per-user-install', '--install-dir', 'PageRepriseDesktop', '--win-shortcut', '--win-menu',
             '--win-menu-group', $product, '--win-upgrade-uuid', 'dcf346c4-c09b-43fd-9589-8525ce79174c')
         $output = Join-Path $dist "PageReprise-$version-Windows-x64.exe"
         Copy-Item -LiteralPath (Join-Path $stage "$product-$version.exe") -Destination $output -Force

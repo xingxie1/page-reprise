@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<job>
+  <script language="JScript"><![CDATA[
+    // The JVM launcher uses an ASCII filename for non-Chinese system locales.
+    // Both shortcuts retain the product's Chinese display name.
+    var shell = new ActiveXObject("WScript.Shell");
+    var installer = new ActiveXObject("WindowsInstaller.Installer");
+    var database = installer.OpenDatabase(shell.Environment("Process")("JpMsiFile"), 1);
+    var shortcuts = database.OpenView("UPDATE `Shortcut` SET `Name` = '\u5faa\u9875'");
+    shortcuts.Execute();
+    shortcuts.Close();
+    database.Commit();
+  ]]></script>
+</job>
