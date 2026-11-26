@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "PageReprise"
-include(":core", ":app")
+include(":core", ":app", ":desktop")

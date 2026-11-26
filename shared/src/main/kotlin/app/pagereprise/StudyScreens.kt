@@ -1,7 +1,5 @@
 package app.pagereprise
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -27,13 +25,14 @@ internal fun EditorScreen(model: StudyModel) {
     val editor = model.editor
     var answerPick by rememberSaveable { mutableStateOf(false) }
     var crop by remember { mutableStateOf<Pair<Boolean,Int>?>(null) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> model.importImages(uris, answerPick) }
+    val picker = rememberImagePicker { files -> model.importImages(files, answerPick) }
     val answerHeading = remember(editor.draft) { BringIntoViewRequester() }
     LaunchedEffect(model.answerShare, editor.draft) {
         if (model.answerShare?.editorId == editor.draft) answerHeading.bringIntoView()
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Heading(if (editor.card == null) "录入一道题" else "编辑原题", "先保存干净的题面，答案和来源可以以后补。")
+        CaptureTools(model)
         if (editor.card == null) Sheet(Modifier.fillMaxWidth()) {
             Text("放进哪一科？", fontWeight = FontWeight.Bold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -64,7 +63,7 @@ internal fun EditorScreen(model: StudyModel) {
                         }) { Text("移除") }
                     }
                 }
-                OutlinedButton(onClick = { answerPick = answers; picker.launch(arrayOf("image/*")) }, enabled = !model.busy && images.size < 16) { Text(if (answers) "＋ 添加答案图" else "＋ 添加题干图") }
+                OutlinedButton(onClick = { answerPick = answers; picker() }, enabled = !model.busy && images.size < 16) { Text(if (answers) "＋ 添加答案图" else "＋ 添加题干图") }
             }
         }
         OutlinedTextField(editor.body.solution, { model.change(model.editor.body.copy(solution = it)) }, Modifier.fillMaxWidth(), label = { Text("解法或一句错因（选填）") }, minLines = 2)

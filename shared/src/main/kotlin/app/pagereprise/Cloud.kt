@@ -1,9 +1,5 @@
 package app.pagereprise
 
-import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
 import app.pagereprise.core.*
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
@@ -16,42 +12,11 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
-import java.security.KeyStore
 import java.util.concurrent.TimeUnit
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 data class Session(val site: String, val key: String, val email: String, val uid: String,
     val access: String, val refresh: String, val expiry: Long) {
     val owner get() = digest(site.toByteArray()) + ":" + uid
-}
-
-class Vault(context: Context) {
-    private val prefs = context.getSharedPreferences("account", Context.MODE_PRIVATE)
-    private fun key(): SecretKey {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val alias = "page-reprise-session-v1"
-        (store.getKey(alias, null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
-            init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
-        }.generateKey()
-    }
-    fun read(): Session? {
-        val box = prefs.getString("session", null)?.split(".") ?: return null
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(box.first(), Base64.NO_WRAP)))
-        return Codec.json.fromJson(String(cipher.doFinal(Base64.decode(box.last(), Base64.NO_WRAP)), Charsets.UTF_8), Session::class.java)
-    }
-    fun write(session: Session?) {
-        if (session == null) { check(prefs.edit().remove("session").commit()); return }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val box = listOf(cipher.iv, cipher.doFinal(Codec.json.toJson(session).toByteArray()))
-            .joinToString(".") { Base64.encodeToString(it, Base64.NO_WRAP) }
-        check(prefs.edit().putString("session", box).commit())
-    }
 }
 
 class Cloud {
@@ -81,7 +46,7 @@ class Cloud {
         val key = publicKey.trim()
         require(key.isNotBlank() && !key.startsWith("sb_secret_")) { "请使用项目公开密钥，不要输入服务端密钥" }
         if (key.contains(".")) {
-            val role = runCatching { JsonParser.parseString(String(Base64.decode(key.split(".")[1], Base64.URL_SAFE or Base64.NO_WRAP))).asJsonObject.get("role").asString }.getOrNull()
+            val role = runCatching { JsonParser.parseString(String(java.util.Base64.getUrlDecoder().decode(key.split(".")[1]))).asJsonObject.get("role").asString }.getOrNull()
             require(role == "anon") { "只接受 anon 或 publishable key" }
         } else require(key.startsWith("sb_publishable_")) { "公开密钥格式不正确" }
         val site = parsed.toString().trimEnd('/')

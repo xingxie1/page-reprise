@@ -10,7 +10,6 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.pagereprise.core.*
@@ -27,7 +26,7 @@ class NotebookTest {
 
     @Test fun captureRequiresSubjectAndSurvivesActivityRecreation() {
         val title = "积分换元 · " + newId().take(6)
-        val model = ViewModelProvider(screen.activity)[StudyModel::class.java]
+        val model = screen.activity.model
         screen.onNodeWithTag("new-card").performClick()
         screen.onNodeWithTag("question-text").performTextInput(title)
         screen.onNodeWithTag("save-card").assertIsNotEnabled()
@@ -54,7 +53,7 @@ class NotebookTest {
     }
 
     @Test fun realRoomAndUiConfirmPromotionWithoutMixingSubjects() {
-        val model = ViewModelProvider(screen.activity)[StudyModel::class.java]
+        val model = screen.activity.model
         val store = Store(screen.activity.application)
         val day = StudyDays.today()
         fun stamp(ago: Long) = day.minusDays(ago).atTime(14, 0).atZone(StudyDays.zone).toInstant().toEpochMilli()
@@ -82,7 +81,7 @@ class NotebookTest {
     }
 
     @Test fun deleteRestoreThroughTheOrdinaryBook() {
-        val model = ViewModelProvider(screen.activity)[StudyModel::class.java]
+        val model = screen.activity.model
         val store = Store(screen.activity.application)
         val title = "阅读主旨 · " + newId().take(8)
         val original = Event.create("english", Body(title = title))
@@ -109,7 +108,7 @@ class NotebookTest {
     @Test fun sharedImageNeedsExplicitSubjectAndDraftHasNoSchedule() {
         assumeTrue(Build.VERSION.SDK_INT >= 29)
         val activity = screen.activity
-        val model = ViewModelProvider(activity)[StudyModel::class.java]
+        val model = activity.model
         val resolver = activity.contentResolver
         val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "reprise-test-" + newId() + ".png")
@@ -163,7 +162,7 @@ class NotebookTest {
 
     @Test fun imageOpensFromTheBookAtFullWindowSize() {
         val activity = screen.activity
-        val model = ViewModelProvider(activity)[StudyModel::class.java]
+        val model = activity.model
         val store = Store(activity.application)
         try {
             val image = Bitmap.createBitmap(640, 240, Bitmap.Config.ARGB_8888)

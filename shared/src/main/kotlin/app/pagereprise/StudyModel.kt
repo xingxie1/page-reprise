@@ -1,11 +1,6 @@
 package app.pagereprise
 
-import android.app.Application
-import android.net.Uri
 import androidx.compose.runtime.*
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
-import androidx.room.withTransaction
 import app.pagereprise.core.*
 import kotlinx.coroutines.*
 import java.io.File
@@ -18,15 +13,15 @@ data class ViewedPhoto(val hash: String, val label: String)
 data class Editor(val draft: String = newId(), val card: String? = null, val subject: String = "",
     val body: Body = Body(), val parents: List<String> = emptyList(), val back: Page = Page.HOME)
 
-class StudyModel(private val app: Application) : AndroidViewModel(app) {
-    private val store = Store(app)
-    private val vault = Vault(app)
-    private val prefs = app.getSharedPreferences("preferences", 0)
+class StudyModel(private val platform: StudyPlatform, private val scope: CoroutineScope) {
+    private val store = platform.store
+    private val vault = platform.vault
+    private val prefs = platform.prefs
     private val cloud = Cloud()
-    private val guest = prefs.getString("guest", null) ?: ("local:" + newId()).also { prefs.edit().putString("guest", it).apply() }
+    private val guest = prefs.getString("guest", null) ?: ("local:" + newId()).also { prefs.putString("guest", it) }
     var session by mutableStateOf(runCatching { vault.read() }.getOrNull()); private set
     val owner get() = session?.owner ?: guest
-    val media get() = Media(app, owner)
+    val media get() = platform.media(owner)
     var cards by mutableStateOf(emptyList<Card>()); private set
     var discarded by mutableStateOf(emptyList<Card>()); private set
     var drafts by mutableStateOf(emptyList<Draft>()); private set
@@ -42,7 +37,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     var page: Page
         get() = currentPage
         private set(value) {
-            if (currentPage == Page.EDITOR && value != Page.EDITOR) Media.protect(owner, null)
+            if (currentPage == Page.EDITOR && value != Page.EDITOR) MediaFiles.protect(owner, null)
             currentPage = value
         }
     var subject by mutableStateOf("math"); private set
@@ -53,7 +48,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     private var currentEditor by mutableStateOf(Editor())
     var editor: Editor
         get() = currentEditor
-        private set(value) { currentEditor = value; Media.protect(owner, value.body) }
+        private set(value) { currentEditor = value; MediaFiles.protect(owner, value.body) }
     var split by mutableStateOf(prefs.getBoolean("split:" + owner, false)); private set
     var preview by mutableStateOf<Staged?>(null); private set
     var mediaRevision by mutableIntStateOf(0); private set
@@ -65,19 +60,19 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     val publishableKey get() = prefs.getString("service-public-key", "").orEmpty()
     private var refreshNumber = 0
     private var again = false
-    private val shares = ArrayDeque<Pair<String, List<Uri>>>()
+    private val shares = ArrayDeque<Pair<String, List<InputFile>>>()
     val subjects get() = (Subjects.main.keys.filterNot { it == "cs" && split && (cards + discarded).none { card -> card.subject == "cs" } } +
         Subjects.parts.keys.filter { key -> split || (cards + discarded).any { it.subject == key } }).distinct()
     val selectable get() = if (split) Subjects.main.keys.filterNot { it == "cs" } + Subjects.parts.keys else subjects
     val book get() = Library.book(cards, subject, focus)
 
-    init { viewModelScope.launch { reload() } }
+    init { scope.launch { reload() } }
 
     private suspend fun reload() {
         val scope = owner
         val ticket = ++refreshNumber
         val snapshot = withContext(Dispatchers.IO) {
-            store.maintain(scope)?.let { TrashCleanup.schedule(app, scope, it) }
+            store.maintain(scope)?.let { platform.scheduleCleanup(scope, it) }
             val rows = store.dao.entries(scope)
             Triple(Library.project(rows.map { Codec.decode(it.payload) }), store.dao.drafts(scope), rows.count { it.pending })
         }
@@ -93,7 +88,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     private fun perform(work: suspend () -> Unit) {
         if (busy) return
         busy = true
-        viewModelScope.launch {
+        scope.launch {
             try { work() }
             catch (failure: CancellationException) { throw failure }
             catch (failure: Exception) { message = failure.localizedMessage ?: "操作失败，请重试" }
@@ -103,10 +98,10 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
 
     fun foreground() {
         today = StudyDays.today()
-        viewModelScope.launch { reload() }
+        scope.launch { reload() }
         sync()
     }
-    fun refreshTrash() { viewModelScope.launch { reload() } }
+    fun refreshTrash() { scope.launch { reload() } }
     fun openTrash() { if (!focus) page = Page.TRASH }
     fun deleteCard(card: Card) = perform {
         store.act(owner, card.id) { fresh ->
@@ -124,7 +119,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         val auth = session ?: return
         if (syncing) { again = true; return }
         syncing = true
-        viewModelScope.launch {
+        scope.launch {
             try {
                 do {
                     again = false
@@ -138,7 +133,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
                             withContext(Dispatchers.Main) { reload(); syncText = "正在核对题图…" }
                         }
                     }
-                    prefs.edit().putLong("synced:" + owner, System.currentTimeMillis()).apply()
+                    prefs.putLong("synced:" + owner, System.currentTimeMillis())
                     mediaRevision++
                     reload()
                     syncText = "已同步"
@@ -150,7 +145,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun updated() { reload(); sync() }
-    fun toggleSplit() { split = !split; prefs.edit().putBoolean("split:" + owner, split).apply() }
+    fun toggleSplit() { split = !split; prefs.putBoolean("split:" + owner, split) }
     fun openBook(key: String, important: Boolean) { subject = key; focus = important; page = Page.BOOK }
     fun settings() { page = Page.SETTINGS }
     fun issues() { page = Page.ISSUES }
@@ -212,8 +207,8 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     }
     fun change(body: Body) { editor = editor.copy(body = body) }
     fun selectSubject(key: String) { editor = editor.copy(subject = key) }
-    fun importImages(uris: List<Uri>, answers: Boolean) = perform { appendImages(uris, answers) }
-    private suspend fun appendImages(uris: List<Uri>, answers: Boolean) {
+    fun importImages(uris: List<InputFile>, answers: Boolean) = perform { appendImages(uris, answers) }
+    private suspend fun appendImages(uris: List<InputFile>, answers: Boolean) {
         if (uris.isEmpty()) return
         val files = media
         val count = if (answers) editor.body.answers.size else editor.body.pictures.size
@@ -222,7 +217,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         val body = editor.body
         change(if (answers) body.copy(answers = body.answers + hashes) else body.copy(pictures = body.pictures + hashes))
     }
-    fun shared(uris: List<Uri>) {
+    fun shared(uris: List<InputFile>) {
         if (uris.isNotEmpty()) {
             shares.addLast(owner to uris)
             receiveNextShare()
@@ -269,7 +264,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         val existing = current.card
         if (existing == null) {
             val event = Event.create(current.subject, current.body)
-            store.db.withTransaction {
+            store.transaction {
                 store.merge(owner, listOf(event), true)
                 store.dao.discard(owner, current.draft)
             }
@@ -302,7 +297,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
 
     private suspend fun switch(auth: Session?) {
         closePhoto()
-        Media.protect(owner, null)
+        MediaFiles.protect(owner, null)
         vault.write(auth)
         session = auth; ready = false; cards = emptyList(); discarded = emptyList(); drafts = emptyList(); pending = 0
         editor = Editor(); queue = emptyList(); selected = ""; restoreCancel()
@@ -313,7 +308,8 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     fun login(site: String, key: String, email: String, pass: String, invite: String) = perform {
         check(!syncing)
         val auth = withContext(Dispatchers.IO) { cloud.login(site, key, email, pass, invite) }
-        prefs.edit().putString("service-site", auth.site).putString("service-public-key", auth.key).apply()
+        prefs.putString("service-site", auth.site)
+        prefs.putString("service-public-key", auth.key)
         switch(auth)
     }
     fun logout() = perform { check(!syncing) { "请等本次同步结束" }; switch(null) }
@@ -322,13 +318,13 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.IO) {
             store.maintain(guest)
             val events = store.dao.entries(guest).map { Codec.decode(it.payload) }.filterNot { it.kind == Kind.PURGE }
-            val origin = Media(app, guest)
+            val origin = platform.media(guest)
             store.importWithImages(owner, events) { origin.file(it).inputStream() }
         }
         updated(); message = "本机试用题目已合并，未包含草稿"
     }
 
-    fun export(uri: Uri) = perform {
+    fun export(destination: OutputFile) = perform {
         val scope = owner
         val files = media
         withContext(Dispatchers.IO) {
@@ -337,17 +333,17 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
                 Library.card(it)?.expiresAt?.let { end -> end <= System.currentTimeMillis() } == true
             }.flatten()
             require(events.images().all { files.file(it).isFile }) { "请先同步所有题图再备份" }
-            requireNotNull(app.contentResolver.openOutputStream(uri, "wt")).use { out ->
+            destination.write { out ->
                 Backup.write(out, scope, events) { hash -> files.file(hash).inputStream() }
             }
         }
         message = "备份已导出，可手动上传夸克网盘"
     }
-    fun stage(uri: Uri) = perform {
+    fun stage(source: InputFile) = perform {
         restoreCancel()
         val scope = owner
         preview = withContext(Dispatchers.IO) {
-            requireNotNull(app.contentResolver.openInputStream(uri)).use { Backup.preview(it, scope, app.cacheDir) }
+            source.open().use { Backup.preview(it, scope, platform.cacheDir) }
         }
     }
     fun restoreCancel() { preview?.close(); preview = null }
@@ -359,5 +355,5 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         }
         restoreCancel(); updated(); message = "已合并备份，不覆盖较新记录"
     }
-    override fun onCleared() { Media.protect(owner, null); restoreCancel(); super.onCleared() }
+    fun close() { MediaFiles.protect(owner, null); restoreCancel() }
 }

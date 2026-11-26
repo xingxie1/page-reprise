@@ -1,8 +1,5 @@
 package app.pagereprise
 
-import android.graphics.BitmapFactory
-import android.view.Window
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
@@ -17,23 +14,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -44,11 +35,7 @@ private fun loaded(model: StudyModel, hash: String, limit: Int): ImageBitmap? {
     val bitmap by produceState<ImageBitmap?>(null, file, limit, model.mediaRevision) {
         value = withContext(Dispatchers.IO) {
             if (!file.isFile) return@withContext null
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(file.path, options)
-            var sample = 1
-            while (maxOf(options.outWidth, options.outHeight) / sample > limit) sample *= 2
-            BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+            decodePhoto(file, limit)
         }
     }
     return bitmap
@@ -66,26 +53,10 @@ internal fun Photo(model: StudyModel, hash: String, label: String) {
 }
 
 @Composable
-internal fun FullScreenPhoto(model: StudyModel, photo: ViewedPhoto, window: Window) {
+internal fun FullScreenPhoto(model: StudyModel, photo: ViewedPhoto) {
     key(photo.hash) {
-        BackHandler { model.closePhoto() }
-        val view = LocalView.current
-        DisposableEffect(window, view) {
-            val controller = WindowCompat.getInsetsController(window, view)
-            val insets = ViewCompat.getRootWindowInsets(view)
-            val status = WindowInsetsCompat.Type.statusBars()
-            val navigation = WindowInsetsCompat.Type.navigationBars()
-            val showStatus = insets?.isVisible(status) != false
-            val showNavigation = insets?.isVisible(navigation) != false
-            val previousBehavior = controller.systemBarsBehavior
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(status or navigation)
-            onDispose {
-                if (showStatus) controller.show(status)
-                if (showNavigation) controller.show(navigation)
-                controller.systemBarsBehavior = previousBehavior
-            }
-        }
+        PlatformBackHandler(true) { model.closePhoto() }
+        ImmersivePhoto()
         val high = loaded(model, photo.hash, 3600)
         var size by remember { mutableStateOf(IntSize.Zero) }
         var scale by remember(size) { mutableFloatStateOf(1f) }
@@ -105,7 +76,11 @@ internal fun FullScreenPhoto(model: StudyModel, photo: ViewedPhoto, window: Wind
         Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds().testTag("photo-viewer")
             .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
             .onSizeChanged { size = it }) {
-            if (high != null) Image(high, photo.label, Modifier.fillMaxSize().transformable(state).pointerInput(high, size) {
+            if (high != null) Image(high, photo.label, Modifier.fillMaxSize().mousePhotoGestures({ scale }, { factor, pan ->
+                val next = (scale * factor).coerceIn(1f, 6f)
+                offset = bounded(offset * (next / scale) + pan, next)
+                scale = next
+            }).transformable(state).pointerInput(high, size) {
                 detectTapGestures(onDoubleTap = { tap ->
                     scale = if (scale > 1f) 1f else 2.5f
                     val center = Offset(size.width / 2f, size.height / 2f)

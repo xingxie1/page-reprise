@@ -1,7 +1,5 @@
 package app.pagereprise
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,8 +21,8 @@ internal fun Settings(model: StudyModel) {
     var showLogin by rememberSaveable { mutableStateOf(false) }
     var transfer by remember { mutableStateOf(false) }
     var logout by remember { mutableStateOf(false) }
-    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> uri?.let(model::export) }
-    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(model::stage) }
+    val exporter = rememberBackupExporter(model::export)
+    val importer = rememberBackupImporter(model::stage)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Heading("账号与数据", "数据只在自己的账号和设备间流转。")
         Sheet(Modifier.fillMaxWidth()) {
@@ -60,8 +58,8 @@ internal fun Settings(model: StudyModel) {
         Sheet(Modifier.fillMaxWidth()) {
             Heading("整库备份", "包含正式题图、各科归属和作答历史；不含密码与本机草稿。")
             if (model.session == null) Text("试用备份绑定本次安装。换机请先迁入受邀账号，账号备份可跨设备恢复。")
-            OutlinedButton(onClick = { exporter.launch("循页-" + model.today + ".zip") }, enabled = !model.busy) { Text("导出备份包") }
-            OutlinedButton(onClick = { importer.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !model.busy) { Text("选择备份并预览") }
+            OutlinedButton(onClick = { exporter("循页-" + model.today + ".zip") }, enabled = !model.busy) { Text("导出备份包") }
+            OutlinedButton(onClick = { importer() }, enabled = !model.busy) { Text("选择备份并预览") }
             Text("导出后可手动上传至夸克网盘；不要用公开分享链接发送含私有笔记的备份。", style = MaterialTheme.typography.bodySmall)
         }
         Sheet(Modifier.fillMaxWidth()) {

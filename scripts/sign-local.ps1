@@ -1,8 +1,12 @@
 param(
     [Parameter(Mandatory = $true)][string]$UnsignedApk,
-    [string]$Output = "dist/PageReprise-0.2.0.apk"
+    [string]$Output
 )
 $ErrorActionPreference = 'Stop'
+if (-not $Output) {
+    $version = (Select-String -LiteralPath (Join-Path $PSScriptRoot '../gradle.properties') -Pattern '^releaseVersion=(.+)$').Matches[0].Groups[1].Value
+    $Output = Join-Path $PSScriptRoot "../dist/PageReprise-$version.apk"
+}
 if (-not $IsWindows) { throw 'This helper uses Windows DPAPI. On other systems use your own release signing key.' }
 $inputFile = (Resolve-Path -LiteralPath $UnsignedApk).Path
 if (-not $env:ANDROID_HOME -or -not $env:JAVA_HOME) { throw 'Set ANDROID_HOME and JAVA_HOME (JDK 17) first.' }
