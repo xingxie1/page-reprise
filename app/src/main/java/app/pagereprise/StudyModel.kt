@@ -14,6 +14,7 @@ import java.time.LocalDate
 enum class Page { HOME, BOOK, REVIEW, DETAIL, EDITOR, SETTINGS, ISSUES, TRASH }
 data class Turn(val card: String, val round: String)
 data class AnswerShare(val editorId: String, val serial: Int)
+data class ViewedPhoto(val hash: String, val label: String)
 data class Editor(val draft: String = newId(), val card: String? = null, val subject: String = "",
     val body: Body = Body(), val parents: List<String> = emptyList(), val back: Page = Page.HOME)
 
@@ -57,6 +58,9 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     var preview by mutableStateOf<Staged?>(null); private set
     var mediaRevision by mutableIntStateOf(0); private set
     var answerShare by mutableStateOf<AnswerShare?>(null); private set
+    var viewedPhoto by mutableStateOf<ViewedPhoto?>(null); private set
+    fun viewPhoto(hash: String, label: String) { viewedPhoto = ViewedPhoto(hash, label) }
+    fun closePhoto() { viewedPhoto = null }
     val serviceAddress get() = prefs.getString("service-site", "").orEmpty()
     val publishableKey get() = prefs.getString("service-public-key", "").orEmpty()
     private var refreshNumber = 0
@@ -229,6 +233,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         val (account, photos) = shares.removeFirst()
         perform {
             if (account != owner) return@perform
+            closePhoto()
             if (page != Page.EDITOR) newEditor()
             val answers = editor.body.pictures.isNotEmpty()
             appendImages(photos, answers)
@@ -296,6 +301,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun switch(auth: Session?) {
+        closePhoto()
         Media.protect(owner, null)
         vault.write(auth)
         session = auth; ready = false; cards = emptyList(); discarded = emptyList(); drafts = emptyList(); pending = 0

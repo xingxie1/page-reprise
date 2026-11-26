@@ -1,6 +1,8 @@
 package app.pagereprise
 
 import android.graphics.BitmapFactory
+import android.view.Window
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
@@ -28,9 +30,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -57,35 +57,41 @@ private fun loaded(model: StudyModel, hash: String, limit: Int): ImageBitmap? {
 @Composable
 internal fun Photo(model: StudyModel, hash: String, label: String) {
     val bitmap = loaded(model, hash, 1024)
-    var zoom by remember(hash) { mutableStateOf(false) }
     if (bitmap == null) {
         Text("图片载入中或尚未缓存，可在联网后同步。", style = MaterialTheme.typography.bodySmall)
         return
     }
     Image(bitmap, label, Modifier.fillMaxWidth().heightIn(max = 300.dp)
-        .clip(RoundedCornerShape(8.dp)).clickable { zoom = true }, contentScale = ContentScale.Fit)
-    if (zoom) Dialog(onDismissRequest = { zoom = false }, properties = DialogProperties(
-        usePlatformDefaultWidth = false, decorFitsSystemWindows = false
-    )) {
+        .clip(RoundedCornerShape(8.dp)).clickable { model.viewPhoto(hash, label) }, contentScale = ContentScale.Fit)
+}
+
+@Composable
+internal fun FullScreenPhoto(model: StudyModel, photo: ViewedPhoto, window: Window) {
+    key(photo.hash) {
+        BackHandler { model.closePhoto() }
         val view = LocalView.current
-        DisposableEffect(view) {
-            val window = (view.parent as? DialogWindowProvider)?.window
-            if (window != null) {
-                val full = android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                window.setLayout(full, full)
-                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
-                WindowCompat.getInsetsController(window, view).apply {
-                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                    hide(WindowInsetsCompat.Type.systemBars())
-                }
+        DisposableEffect(window, view) {
+            val controller = WindowCompat.getInsetsController(window, view)
+            val insets = ViewCompat.getRootWindowInsets(view)
+            val status = WindowInsetsCompat.Type.statusBars()
+            val navigation = WindowInsetsCompat.Type.navigationBars()
+            val showStatus = insets?.isVisible(status) != false
+            val showNavigation = insets?.isVisible(navigation) != false
+            val previousBehavior = controller.systemBarsBehavior
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(status or navigation)
+            onDispose {
+                if (showStatus) controller.show(status)
+                if (showNavigation) controller.show(navigation)
+                controller.systemBarsBehavior = previousBehavior
             }
-            onDispose { }
         }
-        val high = loaded(model, hash, 3600) ?: bitmap
+        val high = loaded(model, photo.hash, 3600)
         var size by remember { mutableStateOf(IntSize.Zero) }
         var scale by remember(size) { mutableFloatStateOf(1f) }
         var offset by remember(size) { mutableStateOf(Offset.Zero) }
         fun bounded(point: Offset, zoomLevel: Float): Offset {
+            high ?: return Offset.Zero
             val fit = minOf(size.width.toFloat() / high.width, size.height.toFloat() / high.height)
             val x = ((high.width * fit * zoomLevel - size.width) / 2).coerceAtLeast(0f)
             val y = ((high.height * fit * zoomLevel - size.height) / 2).coerceAtLeast(0f)
@@ -97,8 +103,9 @@ internal fun Photo(model: StudyModel, hash: String, label: String) {
             scale = next
         }
         Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds().testTag("photo-viewer")
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
             .onSizeChanged { size = it }) {
-            Image(high, label, Modifier.fillMaxSize().transformable(state).pointerInput(high, size) {
+            if (high != null) Image(high, photo.label, Modifier.fillMaxSize().transformable(state).pointerInput(high, size) {
                 detectTapGestures(onDoubleTap = { tap ->
                     scale = if (scale > 1f) 1f else 2.5f
                     val center = Offset(size.width / 2f, size.height / 2f)
@@ -107,7 +114,8 @@ internal fun Photo(model: StudyModel, hash: String, label: String) {
             }.graphicsLayer {
                 scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y
             }, contentScale = ContentScale.Fit)
-            IconButton(onClick = { zoom = false }, modifier = Modifier.align(Alignment.TopEnd)
+            else CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
+            IconButton(onClick = model::closePhoto, modifier = Modifier.align(Alignment.TopEnd)
                 .displayCutoutPadding().padding(8.dp).background(Color.Black.copy(alpha = .55f), RoundedCornerShape(24.dp))
                 .semantics { contentDescription = "关闭大图" }) { Text("×", color = Color.White, fontSize = 28.sp) }
         }

@@ -18,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,7 +36,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         savedInstanceState?.getString("currentEditor")?.let { model.resumeEditor(it, savedInstanceState.getString("editorOwner")) }
-        setContent { RepriseApp(model) }
+        setContent { RepriseApp(model, window) }
         val photos = sharedImages(intent)
         initialShare = photos.takeIf { it.isNotEmpty() }?.let { digest(it.joinToString("\n").toByteArray()) }
         if (initialShare != null && initialShare != savedInstanceState?.getString("initialShare")) model.shared(photos)
@@ -77,14 +78,14 @@ private val colors = lightColorScheme(primary = Pine, onPrimary = Color.White, s
     onPrimaryContainer = Pine, surfaceVariant = Color(0xFFE9EAE1), outline = Color(0xFF79857C))
 
 @Composable
-fun RepriseApp(model: StudyModel) {
+fun RepriseApp(model: StudyModel, window: android.view.Window) {
     MaterialTheme(colorScheme = colors) {
         val snacks = remember { SnackbarHostState() }
         var leave by remember { mutableStateOf(false) }
         val navigateBack: () -> Unit = {
             if (!model.busy && model.page == Page.EDITOR && model.editor.body != Body()) leave = true else model.back()
         }
-        BackHandler(model.page != Page.HOME) { navigateBack() }
+        BackHandler(model.page != Page.HOME && model.viewedPhoto == null) { navigateBack() }
         LaunchedEffect(model.message) {
             model.message?.let { text -> snacks.currentSnackbarData?.dismiss(); snacks.showSnackbar(text); if (model.message == text) model.message = null }
         }
@@ -102,37 +103,41 @@ fun RepriseApp(model: StudyModel) {
                 model.refreshTrash()
             }
         }
-        Scaffold(containerColor = Cream, snackbarHost = { SnackbarHost(snacks) }) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-                Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (model.page != Page.HOME) TextButton(onClick = navigateBack, enabled = !model.busy) { Text("‹ 返回") }
-                    else Text("循页", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Pine)
-                    Spacer(Modifier.weight(1f))
-                    Text(if (model.page == Page.HOME) "PAGE REPRISE" else when(model.page) {
-                        Page.EDITOR -> "录题工作台"; Page.SETTINGS -> "账号与数据"; Page.ISSUES -> "待核对"
-                        Page.TRASH -> Subjects.name(model.subject) + " · 回收站"
-                        else -> Subjects.name(model.subject) + if (model.focus) " · 永久重点本" else " · 普通错题本"
-                    }, style = MaterialTheme.typography.labelMedium, color = Pine)
-                    if (model.page == Page.HOME) TextButton(onClick = model::settings) { Text("设置") }
-                }
-                if (model.busy || model.syncing) LinearProgressIndicator(Modifier.fillMaxWidth())
-                Box(Modifier.fillMaxWidth().weight(1f)) {
-                    when (model.page) {
-                        Page.HOME -> Home(model)
-                        Page.BOOK -> Book(model)
-                        Page.REVIEW -> Review(model)
-                        Page.DETAIL -> {
-                            val card = model.cards.firstOrNull { it.id == model.selected }
-                            if (card != null) Details(model, card)
-                            else if (model.ready) LaunchedEffect(model.selected) { model.back() }
+        Box(Modifier.fillMaxSize()) {
+            val background = if (model.viewedPhoto == null) Modifier else Modifier.clearAndSetSemantics { }
+            Scaffold(modifier = background, containerColor = Cream, snackbarHost = { SnackbarHost(snacks) }) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+                    Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (model.page != Page.HOME) TextButton(onClick = navigateBack, enabled = !model.busy) { Text("‹ 返回") }
+                        else Text("循页", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Pine)
+                        Spacer(Modifier.weight(1f))
+                        Text(if (model.page == Page.HOME) "PAGE REPRISE" else when(model.page) {
+                            Page.EDITOR -> "录题工作台"; Page.SETTINGS -> "账号与数据"; Page.ISSUES -> "待核对"
+                            Page.TRASH -> Subjects.name(model.subject) + " · 回收站"
+                            else -> Subjects.name(model.subject) + if (model.focus) " · 永久重点本" else " · 普通错题本"
+                        }, style = MaterialTheme.typography.labelMedium, color = Pine)
+                        if (model.page == Page.HOME) TextButton(onClick = model::settings) { Text("设置") }
+                    }
+                    if (model.busy || model.syncing) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Box(Modifier.fillMaxWidth().weight(1f)) {
+                        when (model.page) {
+                            Page.HOME -> Home(model)
+                            Page.BOOK -> Book(model)
+                            Page.REVIEW -> Review(model)
+                            Page.DETAIL -> {
+                                val card = model.cards.firstOrNull { it.id == model.selected }
+                                if (card != null) Details(model, card)
+                                else if (model.ready) LaunchedEffect(model.selected) { model.back() }
+                            }
+                            Page.EDITOR -> EditorScreen(model)
+                            Page.SETTINGS -> Settings(model)
+                            Page.ISSUES -> IssueBooks(model)
+                            Page.TRASH -> TrashScreen(model)
                         }
-                        Page.EDITOR -> EditorScreen(model)
-                        Page.SETTINGS -> Settings(model)
-                        Page.ISSUES -> IssueBooks(model)
-                        Page.TRASH -> TrashScreen(model)
                     }
                 }
             }
+            model.viewedPhoto?.let { photo -> FullScreenPhoto(model, photo, window) }
         }
         if (leave) AlertDialog(onDismissRequest = { leave = false }, title = { Text("离开当前编辑？") },
             text = { Text(if (model.editor.card == null) "可以暂存为本机草稿，之后再选科、补图。" else "未保存的改动不会写入题目。") },
