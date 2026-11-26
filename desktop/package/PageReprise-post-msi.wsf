@@ -9,6 +9,9 @@
     var shortcuts = database.OpenView("UPDATE `Shortcut` SET `Name` = '\u5faa\u9875'");
     shortcuts.Execute();
     shortcuts.Close();
+    var product = database.OpenView("UPDATE `Property` SET `Value` = '\u5faa\u9875' WHERE `Property` = 'ProductName'");
+    product.Execute();
+    product.Close();
     database.Commit();
   ]]></script>
 </job>
