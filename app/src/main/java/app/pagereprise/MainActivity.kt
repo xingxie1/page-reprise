@@ -37,7 +37,10 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) handle(intent)
     }
     override fun onResume() { super.onResume(); model.foreground() }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handle(intent) }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
     @Suppress("DEPRECATION")
     private fun handle(intent: Intent?) {
         if (intent?.action !in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return
