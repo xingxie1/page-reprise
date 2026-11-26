@@ -90,6 +90,13 @@ fun RepriseApp(model: StudyModel) {
                 delay((nextMidnight - System.currentTimeMillis()).coerceIn(30L, 60000L))
             }
         }
+        val expires = model.discarded.minOfOrNull { requireNotNull(it.expiresAt) }
+        LaunchedEffect(expires) {
+            if (expires != null) {
+                delay((expires - System.currentTimeMillis()).coerceAtLeast(1))
+                model.refreshTrash()
+            }
+        }
         Scaffold(containerColor = Cream, snackbarHost = { SnackbarHost(snacks) }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
                 Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -98,6 +105,7 @@ fun RepriseApp(model: StudyModel) {
                     Spacer(Modifier.weight(1f))
                     Text(if (model.page == Page.HOME) "PAGE REPRISE" else when(model.page) {
                         Page.EDITOR -> "录题工作台"; Page.SETTINGS -> "账号与数据"; Page.ISSUES -> "待核对"
+                        Page.TRASH -> Subjects.name(model.subject) + " · 回收站"
                         else -> Subjects.name(model.subject) + if (model.focus) " · 永久重点本" else " · 普通错题本"
                     }, style = MaterialTheme.typography.labelMedium, color = Pine)
                     if (model.page == Page.HOME) TextButton(onClick = model::settings) { Text("设置") }
@@ -108,10 +116,15 @@ fun RepriseApp(model: StudyModel) {
                         Page.HOME -> Home(model)
                         Page.BOOK -> Book(model)
                         Page.REVIEW -> Review(model)
-                        Page.DETAIL -> model.cards.firstOrNull { it.id == model.selected }?.let { Details(model, it) }
+                        Page.DETAIL -> {
+                            val card = model.cards.firstOrNull { it.id == model.selected }
+                            if (card != null) Details(model, card)
+                            else if (model.ready) LaunchedEffect(model.selected) { model.back() }
+                        }
                         Page.EDITOR -> EditorScreen(model)
                         Page.SETTINGS -> Settings(model)
                         Page.ISSUES -> IssueBooks(model)
+                        Page.TRASH -> TrashScreen(model)
                     }
                 }
             }
@@ -221,6 +234,7 @@ private fun Book(model: StudyModel) {
                         Button(onClick = { model.start(false) }, enabled = book.any { it.due(model.today) }) { Text("开始到期复习") }
                         OutlinedButton(onClick = { model.start(true, items) }, enabled = items.any { !it.conflict }) { Text("手动抽练") }
                         TextButton(onClick = { model.newEditor(model.subject) }) { Text("＋ 录题") }
+                        if (!model.focus) TextButton(onClick = model::openTrash) { Text("回收站") }
                     }
                 }
                 item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("只搜索这一本") }) }

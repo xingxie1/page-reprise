@@ -11,7 +11,7 @@ import kotlinx.coroutines.*
 import java.io.File
 import java.time.LocalDate
 
-enum class Page { HOME, BOOK, REVIEW, DETAIL, EDITOR, SETTINGS, ISSUES }
+enum class Page { HOME, BOOK, REVIEW, DETAIL, EDITOR, SETTINGS, ISSUES, TRASH }
 data class Turn(val card: String, val round: String)
 data class Editor(val draft: String = newId(), val card: String? = null, val subject: String = "",
     val body: Body = Body(), val parents: List<String> = emptyList(), val back: Page = Page.HOME)
@@ -26,6 +26,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     val owner get() = session?.owner ?: guest
     val media get() = Media(app, owner)
     var cards by mutableStateOf(emptyList<Card>()); private set
+    var discarded by mutableStateOf(emptyList<Card>()); private set
     var drafts by mutableStateOf(emptyList<Draft>()); private set
     var pending by mutableIntStateOf(0); private set
     var ready by mutableStateOf(false); private set
@@ -35,13 +36,22 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     var lastSync by mutableLongStateOf(0); private set
     var message by mutableStateOf<String?>(null)
     var today by mutableStateOf(StudyDays.today())
-    var page by mutableStateOf(Page.HOME); private set
+    private var currentPage by mutableStateOf(Page.HOME)
+    var page: Page
+        get() = currentPage
+        private set(value) {
+            if (currentPage == Page.EDITOR && value != Page.EDITOR) Media.protect(owner, null)
+            currentPage = value
+        }
     var subject by mutableStateOf("math"); private set
     var focus by mutableStateOf(false); private set
     var selected by mutableStateOf(""); private set
     var queue by mutableStateOf(emptyList<Turn>()); private set
     var manual by mutableStateOf(false); private set
-    var editor by mutableStateOf(Editor()); private set
+    private var currentEditor by mutableStateOf(Editor())
+    var editor: Editor
+        get() = currentEditor
+        private set(value) { currentEditor = value; Media.protect(owner, value.body) }
     var split by mutableStateOf(prefs.getBoolean("split:" + owner, false)); private set
     var preview by mutableStateOf<Staged?>(null); private set
     var mediaRevision by mutableIntStateOf(0); private set
@@ -50,8 +60,8 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     private var refreshNumber = 0
     private var again = false
     private val shares = ArrayDeque<Pair<String, List<Uri>>>()
-    val subjects get() = (Subjects.main.keys.filterNot { it == "cs" && split && cards.none { card -> card.subject == "cs" } } +
-        Subjects.parts.keys.filter { key -> split || cards.any { it.subject == key } }).distinct()
+    val subjects get() = (Subjects.main.keys.filterNot { it == "cs" && split && (cards + discarded).none { card -> card.subject == "cs" } } +
+        Subjects.parts.keys.filter { key -> split || (cards + discarded).any { it.subject == key } }).distinct()
     val selectable get() = if (split) Subjects.main.keys.filterNot { it == "cs" } + Subjects.parts.keys else subjects
     val book get() = Library.book(cards, subject, focus)
 
@@ -61,11 +71,13 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         val scope = owner
         val ticket = ++refreshNumber
         val snapshot = withContext(Dispatchers.IO) {
+            store.maintain(scope)?.let { TrashCleanup.schedule(app, scope, it) }
             val rows = store.dao.entries(scope)
             Triple(Library.project(rows.map { Codec.decode(it.payload) }), store.dao.drafts(scope), rows.count { it.pending })
         }
         if (owner != scope || ticket != refreshNumber) return
-        cards = snapshot.first
+        cards = snapshot.first.filterNot { it.trashed }
+        discarded = snapshot.first.filter { (it.expiresAt ?: 0L) > System.currentTimeMillis() }
         drafts = snapshot.second
         pending = snapshot.third
         lastSync = prefs.getLong("synced:" + scope, 0)
@@ -87,6 +99,19 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         today = StudyDays.today()
         viewModelScope.launch { reload() }
         sync()
+    }
+    fun refreshTrash() { viewModelScope.launch { reload() } }
+    fun openTrash() { if (!focus) page = Page.TRASH }
+    fun deleteCard(card: Card) = perform {
+        store.act(owner, card.id) { fresh ->
+            require(fresh.subject == card.subject && fresh.scoreVersion == card.scoreVersion) { "题目已更新，请重新确认" }
+            fresh.trash()
+        }
+        updated(); openBook(card.subject, false); message = "已移入回收站，7 天内可以恢复"
+    }
+    fun restoreCard(card: Card) = perform {
+        store.act(owner, card.id, allowTrashed = true) { fresh -> fresh.restore() }
+        updated(); message = "已恢复到" + Subjects.name(card.subject) + "普通本"
     }
 
     fun sync() {
@@ -128,7 +153,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     fun back() {
         if (busy) return
         page = when(page) {
-            Page.REVIEW, Page.DETAIL -> Page.BOOK
+            Page.REVIEW, Page.DETAIL, Page.TRASH -> Page.BOOK
             Page.EDITOR -> editor.back
             else -> Page.HOME
         }
@@ -269,8 +294,9 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun switch(auth: Session?) {
+        Media.protect(owner, null)
         vault.write(auth)
-        session = auth; ready = false; cards = emptyList(); drafts = emptyList(); pending = 0
+        session = auth; ready = false; cards = emptyList(); discarded = emptyList(); drafts = emptyList(); pending = 0
         editor = Editor(); queue = emptyList(); selected = ""; restoreCancel()
         split = prefs.getBoolean("split:" + owner, false)
         syncText = ""; page = Page.HOME
@@ -285,12 +311,11 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     fun logout() = perform { check(!syncing) { "请等本次同步结束" }; switch(null) }
     fun importGuest() = perform {
         require(session != null)
-        val destination = media
         withContext(Dispatchers.IO) {
-            val events = store.dao.entries(guest).map { Codec.decode(it.payload) }
+            store.maintain(guest)
+            val events = store.dao.entries(guest).map { Codec.decode(it.payload) }.filterNot { it.kind == Kind.PURGE }
             val origin = Media(app, guest)
-            events.images().forEach { hash -> if (!destination.file(hash).exists()) origin.file(hash).inputStream().use { destination.accept(hash, it) } }
-            store.merge(owner, events, true)
+            store.importWithImages(owner, events) { origin.file(it).inputStream() }
         }
         updated(); message = "本机试用题目已合并，未包含草稿"
     }
@@ -299,7 +324,10 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         val scope = owner
         val files = media
         withContext(Dispatchers.IO) {
-            val events = store.dao.entries(scope).map { Codec.decode(it.payload) }
+            store.maintain(scope)
+            val events = store.dao.entries(scope).map { Codec.decode(it.payload) }.groupBy { it.card }.values.filterNot {
+                Library.card(it)?.expiresAt?.let { end -> end <= System.currentTimeMillis() } == true
+            }.flatten()
             require(events.images().all { files.file(it).isFile }) { "请先同步所有题图再备份" }
             requireNotNull(app.contentResolver.openOutputStream(uri, "wt")).use { out ->
                 Backup.write(out, scope, events) { hash -> files.file(hash).inputStream() }
@@ -318,12 +346,10 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     fun restore() = perform {
         val staged = requireNotNull(preview)
         require(staged.index.owner == owner)
-        val files = media
         withContext(Dispatchers.IO) {
-            staged.index.events.images().forEach { hash -> if (!files.file(hash).exists()) File(staged.directory, hash).inputStream().use { files.accept(hash, it) } }
-            store.merge(owner, staged.index.events, true)
+            store.importWithImages(owner, staged.index.events) { File(staged.directory, it).inputStream() }
         }
         restoreCancel(); updated(); message = "已合并备份，不覆盖较新记录"
     }
-    override fun onCleared() { restoreCancel(); super.onCleared() }
+    override fun onCleared() { Media.protect(owner, null); restoreCancel(); super.onCleared() }
 }

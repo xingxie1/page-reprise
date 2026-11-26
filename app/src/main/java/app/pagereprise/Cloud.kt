@@ -108,10 +108,19 @@ class Cloud {
         (if (download) "authenticated/" else "") + "reprise-images/" + auth.uid + "/" + hash
 
     suspend fun sync(auth: Session, store: Store, media: Media, onMetadata: suspend () -> Unit) {
+        pull(auth, store)
         val pending = store.dao.entries(auth.owner).filter { it.pending }
         val uploaded = mutableSetOf<String>()
         for (batch in pending.chunked(80)) {
             val events = batch.map { Codec.decode(it.payload) }
+            val records = JsonArray().apply { events.forEach { event ->
+                add(fields("owner" to auth.uid, "event_id" to event.id, "card_id" to event.card).apply {
+                    add("payload", Codec.json.toJsonTree(event))
+                })
+            } }
+            val append = request(auth.site, auth.key, "/rest/v1/study_events?on_conflict=owner,event_id", auth.access)
+                .header("Prefer","resolution=ignore-duplicates,return=minimal").post(records.toString().toRequestBody(jsonType)).build()
+            json(http.newCall(append).execute())
             for (hash in events.images()) {
                 if (!uploaded.add(hash)) continue
                 val source = media.file(hash)
@@ -126,30 +135,15 @@ class Cloud {
                     }
                 }
             }
-            val records = JsonArray().apply { events.forEach { event ->
-                add(fields("owner" to auth.uid, "event_id" to event.id, "card_id" to event.card).apply {
-                    add("payload", Codec.json.toJsonTree(event))
-                })
-            } }
-            val req = request(auth.site, auth.key, "/rest/v1/study_events?on_conflict=owner,event_id", auth.access)
-                .header("Prefer","resolution=ignore-duplicates,return=minimal").post(records.toString().toRequestBody(jsonType)).build()
-            json(http.newCall(req).execute())
             store.dao.sent(auth.owner, batch.map { it.eventId })
         }
-        var cursor = ""
-        while (true) {
-            val route = "/rest/v1/study_events?select=event_id,card_id,payload&owner=eq." + auth.uid +
-                "&order=event_id.asc&limit=300" + if (cursor.isEmpty()) "" else "&event_id=gt." + cursor
-            val req = request(auth.site, auth.key, route, auth.access).get().build()
-            val rows = JsonParser.parseString(json(http.newCall(req).execute())).asJsonArray
-            if (rows.isEmpty) break
-            val events = rows.map { element ->
-                val row = element.asJsonObject
-                Codec.decode(row.get("payload").toString()).also { require(it.id == row.get("event_id").asString && it.card == row.get("card_id").asString) }
-            }
-            store.merge(auth.owner, events, false)
-            cursor = events.last().id
+        val sweep = request(auth.site, auth.key, "/rest/v1/rpc/reprise_collect_trash", auth.access)
+            .post("{}".toRequestBody(jsonType)).build()
+        http.newCall(sweep).execute().use { response ->
+            if (response.code == 404) throw IOException("云端需要安装 0.2.0 的回收站迁移")
+            json(response)
         }
+        pull(auth, store)
         onMetadata()
         val hashes = store.dao.entries(auth.owner).map { Codec.decode(it.payload) }.images()
         for (hash in hashes.filterNot { media.file(it).isFile }) {
@@ -158,6 +152,23 @@ class Cloud {
                 if (!it.isSuccessful) throw IOException("题图待下载（HTTP " + it.code + "）")
                 media.accept(hash, requireNotNull(it.body).byteStream())
             }
+        }
+    }
+
+    private suspend fun pull(auth: Session, store: Store) {
+        var cursor = ""
+        while (true) {
+            val route = "/rest/v1/study_events?select=event_id,card_id,payload&owner=eq." + auth.uid +
+                "&order=event_id.asc&limit=300" + if (cursor.isEmpty()) "" else "&event_id=gt." + cursor
+            val req = request(auth.site, auth.key, route, auth.access).get().build()
+            val rows = JsonParser.parseString(json(http.newCall(req).execute())).asJsonArray
+            if (rows.isEmpty) return
+            val events = rows.map { element ->
+                val row = element.asJsonObject
+                Codec.decode(row.get("payload").toString()).also { require(it.id == row.get("event_id").asString && it.card == row.get("card_id").asString) }
+            }
+            store.merge(auth.owner, events, false)
+            cursor = events.last().id
         }
     }
 }

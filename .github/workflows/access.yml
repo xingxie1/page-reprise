@@ -21,4 +21,7 @@ jobs:
       - name: Apply migration and verify owner and invitation rules
         env:
           PGPASSWORD: ci-disposable
-        run: psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f checks/postgres-fixture.sql -f supabase/migrations/202611260001_page_reprise.sql -f checks/postgres-access.sql
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f checks/postgres-fixture.sql
+          for migration in supabase/migrations/*.sql; do psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f "$migration"; done
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f checks/postgres-access.sql

@@ -3,6 +3,8 @@ package app.pagereprise
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -13,6 +15,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.pagereprise.core.*
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -138,6 +142,7 @@ internal fun Details(model: StudyModel, card: Card) {
     var moving by remember(card.id) { mutableStateOf(false) }
     var target by remember(card.id) { mutableStateOf("") }
     var undo by remember(card.id) { mutableStateOf(false) }
+    var deleting by remember(card.id) { mutableStateOf(false) }
     var confirmChoice by remember(card.id) { mutableStateOf<Event?>(null) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Heading("题目详情", status(card))
@@ -166,6 +171,9 @@ internal fun Details(model: StudyModel, card: Card) {
             OutlinedButton(onClick = { model.detail(card); model.editCard(card) }, enabled = !card.conflict) { Text("编辑题目") }
             TextButton(onClick = { moving = !moving }, enabled = !card.conflict) { Text("更正科目") }
             if (card.canUndo) TextButton(onClick = { undo = true }) { Text("撤销最近一轮") }
+            if (!card.plan.focus) TextButton(onClick = { deleting = true }, enabled = !model.busy && !card.conflict) {
+                Text("删除错题", color = MaterialTheme.colorScheme.error)
+            }
         }
         if (moving) FlowRow { model.selectable.filterNot { it == card.subject }.forEach { key ->
             TextButton(onClick = { target = key }) { Text(Subjects.name(key)) }
@@ -183,9 +191,30 @@ internal fun Details(model: StudyModel, card: Card) {
     if (undo) Confirm("撤销最近作答？", "恢复该轮开始前的进度和日期。已确认的永久升级不可快捷撤销。", "撤销", { undo = false }) {
         undo = false; model.undo(card)
     }
+    if (deleting) Confirm("将这道题移入回收站？", "题目会从本书和今日待办中移除。7 天内可恢复原题、图片和复习记录。", "移入回收站", { deleting = false }) {
+        deleting = false; model.deleteCard(card)
+    }
     confirmChoice?.let { chosen ->
         Confirm("确认第二次清零？", "保留这次结果将把原题移入同科永久重点本。", "确认移入重点本", { confirmChoice = null }) {
             confirmChoice = null; model.resolve(card, chosen)
+        }
+    }
+}
+
+@Composable
+internal fun TrashScreen(model: StudyModel) {
+    val cards = model.discarded.filter { it.subject == model.subject }.sortedBy { it.expiresAt }
+    val format = remember { DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(StudyDays.zone) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Heading("回收站", Subjects.name(model.subject) + " · 删除满 7 天后彻底清除") }
+        if (cards.isEmpty()) item { Text("回收站是空的") }
+        items(cards, key = { it.id }) { card ->
+            Sheet(Modifier.fillMaxWidth()) {
+                Text(card.body.title.ifBlank { "图片题" }, fontWeight = FontWeight.Medium)
+                card.body.pictures.firstOrNull()?.let { Photo(model, it, "待恢复的题干图") }
+                Text(format.format(Instant.ofEpochMilli(requireNotNull(card.expiresAt))) + " 到期", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = { model.restoreCard(card) }, enabled = !model.busy) { Text("恢复到普通本") }
+            }
         }
     }
 }

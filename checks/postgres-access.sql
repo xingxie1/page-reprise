@@ -6,7 +6,8 @@ set role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',false);
 insert into public.study_events(event_id,card_id,payload)
 values ('20000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',
-'{"id":"20000000-0000-4000-8000-000000000001","card":"20000000-0000-4000-8000-000000000001","kind":"CREATE","at":1800000000000}');
+jsonb_build_object('id','20000000-0000-4000-8000-000000000001','card','20000000-0000-4000-8000-000000000001',
+    'kind','CREATE','at',1800000000000,'body',jsonb_build_object('pictures',jsonb_build_array(repeat('a',64)))));
 insert into public.study_events select * from public.study_events on conflict(owner,event_id) do nothing;
 insert into storage.objects values ('reprise-images', auth.uid()::text || '/' || repeat('a',64));
 do $$

@@ -14,7 +14,16 @@ import java.io.InputStream
 import java.security.MessageDigest
 import kotlin.math.roundToInt
 
-class Media(private val context: Context, owner: String) {
+class Media(private val context: Context, private val owner: String) {
+    companion object {
+        private val editing = mutableMapOf<String, Set<String>>()
+        @Synchronized fun protect(owner: String, body: Body?) {
+            if (body == null) editing.remove(owner) else editing[owner] = (body.pictures + body.answers).toSet()
+        }
+    }
+    fun removeIfUnused(hash: String) = synchronized(Companion) {
+        hash !in editing[owner].orEmpty() && file(hash).let { !it.exists() || it.delete() }
+    }
     val root = File(context.filesDir, "media/" + digest(owner.toByteArray())).also { it.mkdirs() }
     fun file(hash: String): File {
         require(hash.matches(Regex("[0-9a-f]{64}")))
@@ -84,7 +93,10 @@ class Media(private val context: Context, owner: String) {
             require(tmp.length() <= Backup.imageLimit)
             val hash = hasher.digest().hex()
             val target = file(hash)
-            if (!target.exists()) check(tmp.renameTo(target) || target.exists())
+            synchronized(Companion) {
+                if (!target.exists()) check(tmp.renameTo(target) || target.exists())
+                editing[owner] = editing[owner].orEmpty() + hash
+            }
             return hash
         } finally { tmp.delete() }
     }
