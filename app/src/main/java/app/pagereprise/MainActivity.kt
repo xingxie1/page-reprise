@@ -30,28 +30,33 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val model: StudyModel by viewModels()
+    private var initialShare: String? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         savedInstanceState?.getString("currentEditor")?.let { model.resumeEditor(it, savedInstanceState.getString("editorOwner")) }
         setContent { RepriseApp(model) }
-        if (savedInstanceState == null) handle(intent)
+        val photos = sharedImages(intent)
+        initialShare = photos.takeIf { it.isNotEmpty() }?.let { digest(it.joinToString("\n").toByteArray()) }
+        if (initialShare != null && initialShare != savedInstanceState?.getString("initialShare")) model.shared(photos)
     }
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putString("initialShare", initialShare)
         if (model.page == Page.EDITOR) {
-            outState.putString("currentEditor", Codec.json.toJson(model.editor))
+            val snapshot = Codec.json.toJson(model.editor)
+            if (snapshot.length <= 100000) outState.putString("currentEditor", snapshot)
             outState.putString("editorOwner", model.owner)
         }
     }
     override fun onResume() { super.onResume(); model.foreground() }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handle(intent)
+        model.shared(sharedImages(intent))
     }
     @Suppress("DEPRECATION")
-    private fun handle(intent: Intent?) {
-        if (intent == null || intent.action !in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE, Intent.ACTION_VIEW)) return
+    private fun sharedImages(intent: Intent?): List<Uri> {
+        if (intent == null || intent.action !in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE, Intent.ACTION_VIEW)) return emptyList()
         val photos = mutableListOf<Uri>()
         when (intent.action) {
             Intent.ACTION_VIEW -> intent.data?.let(photos::add)
@@ -59,7 +64,7 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_SEND_MULTIPLE -> photos += intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
         }
         intent.clipData?.let { clip -> for (index in 0 until clip.itemCount) clip.getItemAt(index).uri?.let(photos::add) }
-        model.shared(photos.distinct().filter { it.scheme == "content" })
+        return photos.distinct().filter { it.scheme == "content" }
     }
 }
 

@@ -94,14 +94,14 @@ class Store(private val context: Context) {
         }
         val candidates = dao.discardedImages(owner)
         if (candidates.isNotEmpty()) {
-            val retained = dao.entries(owner).map { Codec.decode(it.payload) }.images().toMutableSet()
-            dao.drafts(owner).forEach {
+            val retained = dao.entries(owner).map { Codec.decode(it.payload) }.images()
+            val drafts = dao.drafts(owner).flatMap {
                 val body = Codec.json.fromJson(it.bodyJson, Body::class.java)
-                retained.addAll(body.pictures + body.answers)
-            }
+                body.pictures + body.answers
+            }.toSet()
             val files = Media(context, owner)
             for (hash in candidates) {
-                if (hash in retained || files.removeIfUnused(hash)) dao.finishImage(owner, hash)
+                if (hash in retained || (hash !in drafts && files.removeIfUnused(hash))) dao.finishImage(owner, hash)
             }
         }
         next

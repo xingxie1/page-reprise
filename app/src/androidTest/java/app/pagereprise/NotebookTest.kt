@@ -81,6 +81,31 @@ class NotebookTest {
         } finally { store.db.close() }
     }
 
+    @Test fun deleteRestoreThroughTheOrdinaryBook() {
+        val model = ViewModelProvider(screen.activity)[StudyModel::class.java]
+        val store = Store(screen.activity.application)
+        val title = "阅读主旨 · " + newId().take(8)
+        val original = Event.create("english", Body(title = title))
+        try {
+            runBlocking { store.merge(model.owner, listOf(original), true) }
+            screen.runOnIdle { model.foreground(); model.openBook("english", false) }
+            screen.waitUntil(10000) { model.book.any { it.id == original.id } }
+            screen.onNodeWithText(title).performClick()
+            screen.onNodeWithText("删除错题").performScrollTo().performClick()
+            screen.onNodeWithText("取消").performClick()
+            assertTrue(model.book.any { it.id == original.id })
+            screen.onNodeWithText("删除错题").performScrollTo().performClick()
+            screen.onNodeWithText("移入回收站").performClick()
+            screen.waitUntil(10000) { model.page == Page.BOOK && model.discarded.any { it.id == original.id } }
+            screen.onNodeWithText("回收站").performClick()
+            screen.onNodeWithText(title).assertIsDisplayed()
+            screen.onNodeWithText("恢复到普通本").performClick()
+            screen.waitUntil(10000) { model.book.any { it.id == original.id } }
+            assertEquals(StudyDays.date(original.at).plusDays(1), model.book.single { it.id == original.id }.plan.due)
+            screen.onNodeWithText(title).assertDoesNotExist()
+        } finally { store.db.close() }
+    }
+
     @Test fun sharedImageNeedsExplicitSubjectAndDraftHasNoSchedule() {
         assumeTrue(Build.VERSION.SDK_INT >= 29)
         val activity = screen.activity

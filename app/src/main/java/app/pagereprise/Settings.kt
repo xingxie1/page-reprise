@@ -72,7 +72,8 @@ internal fun Settings(model: StudyModel) {
     model.preview?.let { preview ->
         val summary = remember(preview) {
             Library.project(preview.index.events).groupBy { it.subject }.map { (key, cards) ->
-                Subjects.name(key) + "：普通 " + cards.count { !it.plan.focus } + "，重点 " + cards.count { it.plan.focus }
+                Subjects.name(key) + "：普通 " + cards.count { !it.trashed && !it.plan.focus } + "，重点 " + cards.count { it.plan.focus } +
+                    "，回收站 " + cards.count { (it.expiresAt ?: 0L) > System.currentTimeMillis() }
             }.joinToString("\n").ifBlank { "没有正式题目" }
         }
         Confirm("合并此备份？", "账号：" + (model.session?.email ?: "本机试用") + "\n备份日：" + StudyDays.date(preview.index.savedAt) + "\n" + summary, "确认合并", model::restoreCancel, model::restore)
