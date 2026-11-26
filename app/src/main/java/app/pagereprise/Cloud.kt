@@ -109,10 +109,12 @@ class Cloud {
 
     suspend fun sync(auth: Session, store: Store, media: Media, onMetadata: suspend () -> Unit) {
         pull(auth, store)
-        val pending = store.dao.entries(auth.owner).filter { it.pending }
+        // A week-old offline deletion may be eligible for collection as soon as it is uploaded.
+        // Deliver any already recorded restoration or concurrent review before its deletion.
+        val pending = store.dao.entries(auth.owner).filter { it.pending }.map { Codec.decode(it.payload) }
+            .sortedBy { it.kind == Kind.TRASH }
         val uploaded = mutableSetOf<String>()
-        for (batch in pending.chunked(80)) {
-            val events = batch.map { Codec.decode(it.payload) }
+        for (events in pending.chunked(80)) {
             val records = JsonArray().apply { events.forEach { event ->
                 add(fields("owner" to auth.uid, "event_id" to event.id, "card_id" to event.card).apply {
                     add("payload", Codec.json.toJsonTree(event))
@@ -135,7 +137,7 @@ class Cloud {
                     }
                 }
             }
-            store.dao.sent(auth.owner, batch.map { it.eventId })
+            store.dao.sent(auth.owner, events.map { it.id })
         }
         val sweep = request(auth.site, auth.key, "/rest/v1/rpc/reprise_collect_trash", auth.access)
             .post("{}".toRequestBody(jsonType)).build()

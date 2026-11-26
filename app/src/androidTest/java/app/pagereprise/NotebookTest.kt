@@ -153,7 +153,10 @@ class NotebookTest {
             val tasks = (activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).appTasks
             assertEquals(1, tasks.count { it.taskInfo.baseActivity?.className == MainActivity::class.java.name })
             screen.onAllNodesWithContentDescription("第 1 张").onFirst().performScrollTo().performClick()
-            screen.onNodeWithTag("photo-viewer").assertIsDisplayed()
+            val viewer = screen.onNodeWithTag("photo-viewer").assertIsDisplayed().fetchSemanticsNode()
+            val host = activity.window.decorView
+            assertTrue("Viewer width " + viewer.size.width + " / " + host.width, viewer.size.width >= host.width - 2)
+            assertTrue("Viewer height " + viewer.size.height + " / " + host.height, viewer.size.height >= host.height - 2)
             screen.onNodeWithContentDescription("关闭大图").performClick()
             screen.onNodeWithText("移到题干").performScrollTo().performClick()
             assertEquals(2, model.editor.body.pictures.size)
