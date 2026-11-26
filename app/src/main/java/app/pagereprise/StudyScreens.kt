@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.pagereprise.core.*
@@ -30,7 +31,7 @@ internal fun EditorScreen(model: StudyModel) {
             Text(if (editor.subject.isBlank()) "未选科目 · 只能暂存草稿" else Subjects.name(editor.subject) + " · 普通错题本", style = MaterialTheme.typography.bodySmall)
         }
         OutlinedTextField(editor.body.title, { model.change(model.editor.body.copy(title = it)) },
-            Modifier.fillMaxWidth(), label = { Text("题干文字（有题图可留空）") }, minLines = 2)
+            Modifier.fillMaxWidth().testTag("question-text"), label = { Text("题干文字（有题图可留空）") }, minLines = 2)
         for (answers in listOf(false, true)) {
             val images = if (answers) editor.body.answers else editor.body.pictures
             Sheet(Modifier.fillMaxWidth()) {
@@ -54,7 +55,7 @@ internal fun EditorScreen(model: StudyModel) {
         }
         OutlinedTextField(editor.body.solution, { model.change(model.editor.body.copy(solution = it)) }, Modifier.fillMaxWidth(), label = { Text("解法或一句错因（选填）") }, minLines = 2)
         OutlinedTextField(editor.body.source, { model.change(model.editor.body.copy(source = it)) }, Modifier.fillMaxWidth(), label = { Text("题号、页码或考点（选填）") })
-        Button(onClick = model::saveCard, enabled = !model.busy && editor.subject.isNotBlank() && (editor.body.title.isNotBlank() || editor.body.pictures.isNotEmpty()), modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = model::saveCard, enabled = !model.busy && editor.subject.isNotBlank() && (editor.body.title.isNotBlank() || editor.body.pictures.isNotEmpty()), modifier = Modifier.fillMaxWidth().testTag("save-card")) {
             Text(if (editor.card == null) "保存到" + Subjects.name(editor.subject) + "普通本" else "保存改动，不改变排期")
         }
         if (editor.card == null) OutlinedButton(onClick = model::saveDraft, enabled = !model.busy, modifier = Modifier.fillMaxWidth()) { Text("仅存为本机草稿") }

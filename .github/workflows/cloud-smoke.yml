@@ -1,0 +1,17 @@
+name: Cloud integration
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  accounts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.75.0
+      - name: Start disposable Auth, PostgREST and Storage
+        run: supabase start -x studio,analytics,edge-runtime,vector,realtime,imgproxy,supavisor,postgres-meta
+      - name: Two sessions and a separate friend's account
+        run: python3 checks/cloud_roundtrip.py

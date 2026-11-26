@@ -1,0 +1,24 @@
+name: Database access
+on:
+  push:
+    paths: ['supabase/**', 'checks/**', '.github/workflows/access.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  policies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci-disposable
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migration and verify owner and invitation rules
+        env:
+          PGPASSWORD: ci-disposable
+        run: psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f checks/postgres-fixture.sql -f supabase/migrations/202611260001_page_reprise.sql -f checks/postgres-access.sql

@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -142,7 +143,7 @@ private fun Home(model: StudyModel) {
                     }
                 }
             }
-            item { Button(onClick = { model.newEditor() }, modifier = Modifier.fillMaxWidth()) { Text("＋  录入一道题") } }
+            item { Button(onClick = { model.newEditor() }, modifier = Modifier.fillMaxWidth().testTag("new-card")) { Text("＋  录入一道题") } }
             item { Heading("我的题本", "普通与永久重点分开复习，每道题只属于一本。") }
             items(model.subjects.chunked(columns)) { keys ->
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -153,7 +154,7 @@ private fun Home(model: StudyModel) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 for (focus in listOf(false, true)) {
                                     val count = own.count { it.plan.focus == focus && it.due(model.today) }
-                                    OutlinedButton(onClick = { model.openBook(key, focus) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) {
+                                    OutlinedButton(onClick = { model.openBook(key, focus) }, modifier = Modifier.weight(1f).testTag("book:" + key + ":" + focus), contentPadding = PaddingValues(4.dp)) {
                                         Text((if (focus) "重点  " else "普通  ") + if (unknown) "—" else count.toString(), color = if (focus) Amber else Pine)
                                     }
                                 }
