@@ -21,4 +21,5 @@ jobs:
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/androidTest/debug/*.apk
+            app/schemas/**/*.json
           retention-days: 14

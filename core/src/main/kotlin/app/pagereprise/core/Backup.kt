@@ -66,7 +66,7 @@ object Backup {
                         File(directory, hash).outputStream().use { file ->
                             total += copyLimited(zip, file, imageLimit, digest)
                         }
-                        require(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) } == hash) { "题图校验失败" }
+                        require(digest.digest().hex() == hash) { "题图校验失败" }
                     }
                     require(total <= totalLimit) { "备份超过 1 GiB" }
                     zip.closeEntry()

@@ -195,7 +195,7 @@ private fun Book(model: StudyModel) {
     var query by rememberSaveable(model.subject, model.focus) { mutableStateOf("") }
     var filter by rememberSaveable(model.subject, model.focus) { mutableStateOf("全部") }
     var peek by rememberSaveable(model.subject, model.focus) { mutableStateOf("") }
-    val items = book.filter { (query.isBlank() || (it.body.title + " " + it.body.source).contains(query, true)) && when(filter) {
+    val items = book.filter { (query.isBlank() || (it.body.title + " " + it.body.source + " " + it.body.tags.joinToString(" ")).contains(query, true)) && when(filter) {
         "已到期" -> it.due(model.today); "已掌握" -> it.plan.due == null; "待核对" -> it.conflict; else -> true
     } }
     BoxWithConstraints(Modifier.fillMaxSize()) {

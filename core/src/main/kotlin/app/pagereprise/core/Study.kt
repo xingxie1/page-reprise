@@ -12,8 +12,15 @@ object StudyDays {
     fun today(): LocalDate = date(System.currentTimeMillis())
 }
 
-fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
-    .joinToString("") { "%02x".format(it.toInt() and 255) }
+fun ByteArray.hex(): String = buildString(size * 2) {
+    for (byte in this@hex) {
+        val value = byte.toInt() and 255
+        append("0123456789abcdef"[value ushr 4])
+        append("0123456789abcdef"[value and 15])
+    }
+}
+
+fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).hex()
 
 fun newId(): String = UUID.randomUUID().toString()
 
@@ -29,12 +36,14 @@ data class Body(
     val source: String = "",
     val solution: String = "",
     val pictures: List<String> = emptyList(),
-    val answers: List<String> = emptyList()
+    val answers: List<String> = emptyList(),
+    val tags: List<String> = emptyList()
 ) {
     fun checked(): Body {
         require(title.isNotBlank() || pictures.isNotEmpty()) { "请填写题干或添加题图" }
         require(title.length <= 12000 && solution.length <= 24000 && source.length <= 1000) { "文字太长" }
         require(pictures.size <= 16 && answers.size <= 16) { "题图和答案图各最多 16 张" }
+        require(tags.size <= 24 && tags.all { it.isNotBlank() && it.length <= 60 })
         require((pictures + answers).all { it.matches(Regex("[0-9a-f]{64}")) }) { "图片标识无效" }
         return this
     }

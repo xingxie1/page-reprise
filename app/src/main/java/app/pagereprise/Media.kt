@@ -27,7 +27,7 @@ class Media(private val context: Context, owner: String) {
         try {
             val hasher = MessageDigest.getInstance("SHA-256")
             tmp.outputStream().use { Backup.copyLimited(input, it, Backup.imageLimit, hasher) }
-            require(hasher.digest().joinToString("") { "%02x".format(it.toInt() and 255) } == hash) { "题图校验失败" }
+            require(hasher.digest().hex() == hash) { "题图校验失败" }
             if (!target.exists()) check(tmp.renameTo(target) || target.exists())
         } finally { tmp.delete() }
     }
@@ -82,7 +82,7 @@ class Media(private val context: Context, owner: String) {
                 java.security.DigestOutputStream(out, hasher).use { check(solid.compress(Bitmap.CompressFormat.JPEG, 94, it)) }
             }
             require(tmp.length() <= Backup.imageLimit)
-            val hash = hasher.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+            val hash = hasher.digest().hex()
             val target = file(hash)
             if (!target.exists()) check(tmp.renameTo(target) || target.exists())
             return hash

@@ -45,6 +45,8 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     var split by mutableStateOf(prefs.getBoolean("split:" + owner, false)); private set
     var preview by mutableStateOf<Staged?>(null); private set
     var mediaRevision by mutableIntStateOf(0); private set
+    val serviceAddress get() = prefs.getString("service-site", "").orEmpty()
+    val publishableKey get() = prefs.getString("service-public-key", "").orEmpty()
     private var refreshNumber = 0
     private var again = false
     val subjects get() = (Subjects.main.keys.filterNot { it == "cs" && split && cards.none { card -> card.subject == "cs" } } +
@@ -132,7 +134,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     }
     fun start(practice: Boolean, items: List<Card> = book) {
         val scoped = items.filter { it.subject == subject && it.plan.focus == focus && !it.conflict && (practice || it.due(today)) }
-        if (scoped.isEmpty()) { message = "本本没有可复习的题"; return }
+        if (scoped.isEmpty()) { message = "这本没有可复习的题"; return }
         manual = practice
         queue = scoped.map { Turn(it.id, it.round) }
         page = Page.REVIEW
@@ -236,9 +238,9 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     fun resolve(card: Card, chosen: Event) = perform {
         store.act(owner, card.id) { fresh ->
             when(chosen.kind) {
-                Kind.MOVE -> { require(chosen in fresh.moves); fresh.move(chosen.value) }
-                Kind.EDIT -> { require(chosen in fresh.edits); fresh.edit(requireNotNull(chosen.body)) }
-                else -> fresh.chooseVote(chosen)
+                Kind.MOVE -> { require(chosen in fresh.moves && fresh.moves == card.moves) { "选项已更新，请重新核对" }; fresh.move(chosen.value) }
+                Kind.EDIT -> { require(chosen in fresh.edits && fresh.edits == card.edits) { "选项已更新，请重新核对" }; fresh.edit(requireNotNull(chosen.body)) }
+                else -> { require(fresh.votes == card.votes) { "作答已更新，请重新核对" }; fresh.chooseVote(chosen) }
             }
         }
         updated(); detail(cards.first { it.id == card.id }); message = "已保存核对结果"
@@ -255,6 +257,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     fun login(site: String, key: String, email: String, pass: String, invite: String) = perform {
         check(!syncing)
         val auth = withContext(Dispatchers.IO) { cloud.login(site, key, email, pass, invite) }
+        prefs.edit().putString("service-site", auth.site).putString("service-public-key", auth.key).apply()
         switch(auth)
     }
     fun logout() = perform { check(!syncing) { "请等本次同步结束" }; switch(null) }

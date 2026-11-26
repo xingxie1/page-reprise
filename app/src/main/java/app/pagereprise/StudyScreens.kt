@@ -54,6 +54,17 @@ internal fun EditorScreen(model: StudyModel) {
             }
         }
         OutlinedTextField(editor.body.solution, { model.change(model.editor.body.copy(solution = it)) }, Modifier.fillMaxWidth(), label = { Text("解法或一句错因（选填）") }, minLines = 2)
+        if (editor.subject == "cs") {
+            Text("408 考点（可多选，不改变所属题本）")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Subjects.parts.values.forEach { tag ->
+                    val active = tag in editor.body.tags
+                    FilterChip(active, {
+                        model.change(editor.body.copy(tags = if (active) editor.body.tags - tag else editor.body.tags + tag))
+                    }, { Text(tag) })
+                }
+            }
+        }
         OutlinedTextField(editor.body.source, { model.change(model.editor.body.copy(source = it)) }, Modifier.fillMaxWidth(), label = { Text("题号、页码或考点（选填）") })
         Button(onClick = model::saveCard, enabled = !model.busy && editor.subject.isNotBlank() && (editor.body.title.isNotBlank() || editor.body.pictures.isNotEmpty()), modifier = Modifier.fillMaxWidth().testTag("save-card")) {
             Text(if (editor.card == null) "保存到" + Subjects.name(editor.subject) + "普通本" else "保存改动，不改变排期")
@@ -125,6 +136,7 @@ internal fun Details(model: StudyModel, card: Card) {
     var moving by remember(card.id) { mutableStateOf(false) }
     var target by remember(card.id) { mutableStateOf("") }
     var undo by remember(card.id) { mutableStateOf(false) }
+    var confirmChoice by remember(card.id) { mutableStateOf<Event?>(null) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Heading("题目详情", status(card))
         if (card.conflict) Sheet(Modifier.fillMaxWidth()) {
@@ -141,7 +153,10 @@ internal fun Details(model: StudyModel, card: Card) {
                     Text(option.body?.solution.orEmpty(), style = MaterialTheme.typography.bodySmall)
                     (option.body?.pictures.orEmpty() + option.body?.answers.orEmpty()).forEach { Photo(model, it, "待核对版本") }
                 }
-                OutlinedButton(onClick = { model.resolve(card, option) }, enabled = !model.busy) { Text(StudyDays.date(option.at).toString() + " · " + label.take(80)) }
+                OutlinedButton(onClick = {
+                    if (option.kind == Kind.REVIEW && option.value == "wrong" && card.plan.resets == 1) confirmChoice = option
+                    else model.resolve(card, option)
+                }, enabled = !model.busy) { Text(StudyDays.date(option.at).toString() + " · " + label.take(80)) }
             }
         }
         Question(model, card, reveal) { reveal = !reveal }
@@ -165,5 +180,10 @@ internal fun Details(model: StudyModel, card: Card) {
     }
     if (undo) Confirm("撤销最近作答？", "恢复该轮开始前的进度和日期。已确认的永久升级不可快捷撤销。", "撤销", { undo = false }) {
         undo = false; model.undo(card)
+    }
+    confirmChoice?.let { chosen ->
+        Confirm("确认第二次清零？", "保留这次结果将把原题移入同科永久重点本。", "确认移入重点本", { confirmChoice = null }) {
+            confirmChoice = null; model.resolve(card, chosen)
+        }
     }
 }

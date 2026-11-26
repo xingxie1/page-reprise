@@ -15,8 +15,8 @@ import app.pagereprise.core.*
 
 @Composable
 internal fun Settings(model: StudyModel) {
-    var endpoint by rememberSaveable { mutableStateOf(model.session?.site.orEmpty()) }
-    var key by remember { mutableStateOf("") }
+    var endpoint by rememberSaveable { mutableStateOf(model.serviceAddress) }
+    var key by remember { mutableStateOf(model.publishableKey) }
     var email by rememberSaveable { mutableStateOf(model.session?.email.orEmpty()) }
     var password by remember { mutableStateOf("") }
     var invite by remember { mutableStateOf("") }

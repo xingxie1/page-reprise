@@ -27,10 +27,10 @@ try {
         & $keytool -genkeypair -storetype PKCS12 -keystore $store -alias reprise -keyalg RSA -keysize 3072 -validity 10000 -dname 'CN=PageReprise private distribution' -storepass:env REPRISE_LOCAL_PASS
         if ($LASTEXITCODE -ne 0) { throw 'Key generation failed' }
     } else {
-        $secure = Get-Content -Raw -LiteralPath $protected | ConvertTo-SecureString
+        $secure = (Get-Content -Raw -LiteralPath $protected).Trim() | ConvertTo-SecureString
         $env:REPRISE_LOCAL_PASS = [Net.NetworkCredential]::new('local', $secure).Password
     }
-    & $align -f -p 4 $inputFile $aligned
+    & $align -f -P 16 4 $inputFile $aligned
     if ($LASTEXITCODE -ne 0) { throw 'Alignment failed' }
     & $sign sign --ks $store --ks-key-alias reprise --ks-pass env:REPRISE_LOCAL_PASS --out $outputFile $aligned
     if ($LASTEXITCODE -ne 0) { throw 'Signing failed' }
