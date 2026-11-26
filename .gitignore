@@ -6,6 +6,8 @@
 local.properties
 *.keystore
 *.jks
+*.p12
+*.dpapi
 *.apk
 *.aab
 *.idsig
