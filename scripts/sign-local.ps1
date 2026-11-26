@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$UnsignedApk,
-    [string]$Output = "dist/PageReprise-0.1.0.apk"
+    [string]$Output = "dist/PageReprise-0.2.0.apk"
 )
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'This helper uses Windows DPAPI. On other systems use your own release signing key.' }

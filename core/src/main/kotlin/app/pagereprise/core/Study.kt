@@ -25,7 +25,7 @@ fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").dige
 fun newId(): String = UUID.randomUUID().toString()
 
 object Subjects {
-    val main = linkedMapOf("math" to "数学二", "english" to "英语二", "cs" to "408", "politics" to "政治")
+    val main = linkedMapOf("math" to "数学", "english" to "英语", "cs" to "408", "politics" to "政治")
     val parts = linkedMapOf("cs-ds" to "数据结构", "cs-co" to "计算机组成原理", "cs-os" to "操作系统", "cs-net" to "计算机网络")
     val all = main + parts
     fun name(key: String): String = all[key] ?: key
@@ -49,7 +49,8 @@ data class Body(
     }
 }
 
-enum class Kind { CREATE, REVIEW, UNDO, MOVE, EDIT }
+const val TRASH_LIFETIME = 7L * 24 * 60 * 60 * 1000
+enum class Kind { CREATE, REVIEW, UNDO, MOVE, EDIT, TRASH, RESTORE, PURGE }
 
 data class Event(
     val id: String = newId(),
@@ -69,6 +70,9 @@ data class Event(
             Kind.CREATE -> { require(id == card && value in Subjects.all && refs.isEmpty()); requireNotNull(body).checked() }
             Kind.EDIT -> requireNotNull(body).checked()
             Kind.MOVE -> require(value in Subjects.all)
+            Kind.TRASH -> require(base.matches(Regex("[0-9a-f]{64}")) && body == null)
+            Kind.RESTORE -> require(refs.isNotEmpty() && body == null)
+            Kind.PURGE -> require(id == card && body == null && refs.isEmpty() && value.isEmpty() && base.isEmpty())
             Kind.REVIEW, Kind.UNDO -> {
                 require(base == "start" || base.matches(Regex("[0-9a-f]{64}")))
                 if (kind == Kind.REVIEW) require(value == "right" || value == "wrong")
@@ -99,13 +103,23 @@ data class Step(val round: String, val votes: List<Event>, val before: Plan, val
 data class Card(
     val id: String, val subject: String, val body: Body, val plan: Plan, val round: String,
     val votes: List<Event>, val moves: List<Event>, val edits: List<Event>, val history: List<Step>,
-    val scoreConflict: Boolean
+    val scoreConflict: Boolean, val scoreVersion: String, val removals: List<Event>
 ) {
+    val expiresAt get() = removals.minOfOrNull { it.at }?.plus(TRASH_LIFETIME)
+    val trashed get() = removals.isNotEmpty()
+    fun trash(at: Long = System.currentTimeMillis()): Event {
+        require(!plan.focus && !trashed && !conflict) { "只能删除普通本中状态明确的题目" }
+        return Event(card = id, kind = Kind.TRASH, base = scoreVersion, at = at)
+    }
+    fun restore(at: Long = System.currentTimeMillis()): Event {
+        require(trashed && at < requireNotNull(expiresAt) && removals.all { at >= it.at }) { "这道题已超过恢复期限" }
+        return Event(card = id, kind = Kind.RESTORE, refs = removals.ids(), at = at)
+    }
     val moveConflict get() = moves.map { it.value }.distinct().size > 1
     val editConflict get() = edits.map { it.body }.distinct().size > 1
     val conflict get() = scoreConflict || moveConflict || editConflict
     val canUndo get() = !conflict && history.lastOrNull()?.let { it.before.focus == it.after.focus } == true
-    fun due(day: LocalDate) = !conflict && plan.due?.let { !it.isAfter(day) } == true
+    fun due(day: LocalDate) = !trashed && !conflict && plan.due?.let { !it.isAfter(day) } == true
     fun answer(right: Boolean, at: Long = System.currentTimeMillis()): Event {
         require(due(StudyDays.date(at))) { "该轮已改变，请刷新" }
         return Event(card = id, kind = Kind.REVIEW, at = at, base = round,
@@ -138,6 +152,7 @@ object Library {
     fun project(events: Collection<Event>): List<Card> = events.groupBy { it.card }.values.mapNotNull(::card)
 
     fun card(input: List<Event>): Card? {
+        if (input.any { it.kind == Kind.PURGE }) return null
         val events = input.distinctBy { it.id }
         val creation = events.firstOrNull { it.kind == Kind.CREATE && it.id == it.card } ?: return null
         val moves = heads(events.filter { it.kind == Kind.MOVE })
@@ -172,10 +187,17 @@ object Library {
             plan = after
             round = successor(round, choice)
         }
-        return Card(creation.card, subject, body, plan, round, active, moves, edits, history, conflict)
+        val scoreVersion = digest(rounds.values.flatten().ids().joinToString(",").toByteArray())
+        val restores = events.filter { it.kind == Kind.RESTORE }
+        val removals = if (plan.focus) emptyList() else events.filter { mark ->
+            mark.kind == Kind.TRASH && mark.base == scoreVersion && restores.none { restoration ->
+                mark.id in restoration.refs && restoration.at >= mark.at && restoration.at < mark.at + TRASH_LIFETIME
+            }
+        }.sortedBy { it.id }
+        return Card(creation.card, subject, body, plan, round, active, moves, edits, history, conflict, scoreVersion, removals)
     }
 
     fun book(cards: List<Card>, subject: String, focus: Boolean): List<Card> =
-        cards.filter { it.subject == subject && it.plan.focus == focus }
+        cards.filter { !it.trashed && it.subject == subject && it.plan.focus == focus }
             .sortedWith(compareBy<Card> { it.plan.due ?: LocalDate.MAX }.thenBy { it.id })
 }

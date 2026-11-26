@@ -38,12 +38,14 @@ internal fun EditorScreen(model: StudyModel) {
                 Text(if (answers) "答案图 · 复习时折叠" else "题干图 · 按顺序展示", fontWeight = FontWeight.Bold)
                 images.forEachIndexed { index, hash ->
                     Photo(model, hash, "第 " + (index + 1) + " 张")
-                    Row {
+                    FlowRow {
                         TextButton(onClick = { crop = answers to index }) { Text("裁切") }
                         TextButton(enabled = index > 0, onClick = {
                             val updated = images.toMutableList().apply { add(index - 1, removeAt(index)) }
                             model.change(if (answers) editor.body.copy(answers = updated) else editor.body.copy(pictures = updated))
                         }) { Text("上移") }
+                        TextButton(enabled = !model.busy && (if (answers) editor.body.pictures else editor.body.answers).size < 16,
+                            onClick = { model.movePhoto(answers, index) }) { Text(if (answers) "移到题干" else "移到答案") }
                         TextButton(onClick = {
                             val updated = images.toMutableList().apply { removeAt(index) }
                             model.change(if (answers) editor.body.copy(answers = updated) else editor.body.copy(pictures = updated))

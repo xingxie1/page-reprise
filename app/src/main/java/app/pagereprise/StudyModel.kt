@@ -49,6 +49,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
     val publishableKey get() = prefs.getString("service-public-key", "").orEmpty()
     private var refreshNumber = 0
     private var again = false
+    private val shares = ArrayDeque<Pair<String, List<Uri>>>()
     val subjects get() = (Subjects.main.keys.filterNot { it == "cs" && split && cards.none { card -> card.subject == "cs" } } +
         Subjects.parts.keys.filter { key -> split || cards.any { it.subject == key } }).distinct()
     val selectable get() = if (split) Subjects.main.keys.filterNot { it == "cs" } + Subjects.parts.keys else subjects
@@ -78,7 +79,7 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
             try { work() }
             catch (failure: CancellationException) { throw failure }
             catch (failure: Exception) { message = failure.localizedMessage ?: "操作失败，请重试" }
-            finally { busy = false }
+            finally { busy = false; receiveNextShare() }
         }
     }
 
@@ -170,10 +171,19 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         editor = Editor(draft = record.draftId, subject = record.subject, body = Codec.json.fromJson(record.bodyJson, Body::class.java))
         page = Page.EDITOR
     }
+    fun resumeEditor(snapshot: String, account: String?) {
+        if (owner != account || page != Page.HOME) return
+        val saved = Codec.json.fromJson(snapshot, Editor::class.java)
+        editor = saved
+        selected = saved.card.orEmpty()
+        if (saved.subject in Subjects.all) subject = saved.subject
+        page = Page.EDITOR
+    }
     fun change(body: Body) { editor = editor.copy(body = body) }
     fun selectSubject(key: String) { editor = editor.copy(subject = key) }
-    fun importImages(uris: List<Uri>, answers: Boolean) = perform {
-        if (uris.isEmpty()) return@perform
+    fun importImages(uris: List<Uri>, answers: Boolean) = perform { appendImages(uris, answers) }
+    private suspend fun appendImages(uris: List<Uri>, answers: Boolean) {
+        if (uris.isEmpty()) return
         val files = media
         val count = if (answers) editor.body.answers.size else editor.body.pictures.size
         require(count + uris.size <= 16) { "每栏最多 16 张图" }
@@ -181,19 +191,31 @@ class StudyModel(private val app: Application) : AndroidViewModel(app) {
         val body = editor.body
         change(if (answers) body.copy(answers = body.answers + hashes) else body.copy(pictures = body.pictures + hashes))
     }
-    fun shared(uris: List<Uri>) = perform {
-        if (uris.isEmpty()) return@perform
-        if (page == Page.EDITOR && editor.card == null && editor.body != Body()) {
-            store.dao.saveDraft(Draft(owner, editor.draft, editor.subject, Codec.json.toJson(editor.body), System.currentTimeMillis()))
-        } else if (page == Page.EDITOR && editor.card != null) {
-            message = "请先完成当前编辑，再分享图片"; return@perform
+    fun shared(uris: List<Uri>) {
+        if (uris.isNotEmpty()) {
+            shares.addLast(owner to uris)
+            receiveNextShare()
         }
-        newEditor()
-        require(uris.size <= 16) { "一次最多 16 张" }
-        val files = media
-        val photos = withContext(Dispatchers.IO) { uris.map(files::import) }
-        change(Body(pictures = photos))
-        reload()
+    }
+    private fun receiveNextShare() {
+        if (busy || shares.isEmpty()) return
+        val (account, photos) = shares.removeFirst()
+        perform {
+            if (account != owner) return@perform
+            if (page != Page.EDITOR) newEditor()
+            val answers = editor.body.pictures.isNotEmpty()
+            appendImages(photos, answers)
+            message = if (answers) "已添加到本题答案图" else "已添加到本题题干图"
+        }
+    }
+    fun movePhoto(fromAnswers: Boolean, index: Int) {
+        if (busy) return
+        val body = editor.body
+        val from = (if (fromAnswers) body.answers else body.pictures).toMutableList()
+        val to = if (fromAnswers) body.pictures else body.answers
+        if (index !in from.indices || to.size >= 16) return
+        val moved = to + from.removeAt(index)
+        change(if (fromAnswers) body.copy(answers = from, pictures = moved) else body.copy(pictures = from, answers = moved))
     }
     fun cropPhoto(answer: Boolean, position: Int, bounds: List<Float>) = perform {
         val body = editor.body

@@ -20,8 +20,20 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -52,23 +64,47 @@ internal fun Photo(model: StudyModel, hash: String, label: String) {
     }
     Image(bitmap, label, Modifier.fillMaxWidth().heightIn(max = 300.dp)
         .clip(RoundedCornerShape(8.dp)).clickable { zoom = true }, contentScale = ContentScale.Fit)
-    if (zoom) Dialog(onDismissRequest = { zoom = false }) {
-        val high = loaded(model, hash, 2800) ?: bitmap
-        var scale by remember { mutableFloatStateOf(1f) }
-        var offset by remember { mutableStateOf(Offset.Zero) }
-        val state = rememberTransformableState { factor, pan, _ ->
-            scale = (scale * factor).coerceIn(1f, 6f)
-            offset = if (scale == 1f) Offset.Zero else offset + pan
-        }
-        Surface(shape = RoundedCornerShape(14.dp)) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().fillMaxHeight(.68f).clipToBounds().transformable(state), contentAlignment = Alignment.Center) {
-                    Image(high, label, Modifier.fillMaxSize().graphicsLayer {
-                        scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y
-                    }, contentScale = ContentScale.Fit)
-                }
-                TextButton(onClick = { zoom = false }) { Text("双指缩放 · 关闭") }
+    if (zoom) Dialog(onDismissRequest = { zoom = false }, properties = DialogProperties(
+        usePlatformDefaultWidth = false, decorFitsSystemWindows = false
+    )) {
+        val view = LocalView.current
+        DisposableEffect(view) {
+            val window = (view.parent as? DialogWindowProvider)?.window
+            if (window != null) WindowCompat.getInsetsController(window, view).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
             }
+            onDispose { }
+        }
+        val high = loaded(model, hash, 3600) ?: bitmap
+        var size by remember { mutableStateOf(IntSize.Zero) }
+        var scale by remember(size) { mutableFloatStateOf(1f) }
+        var offset by remember(size) { mutableStateOf(Offset.Zero) }
+        fun bounded(point: Offset, zoomLevel: Float): Offset {
+            val fit = minOf(size.width.toFloat() / high.width, size.height.toFloat() / high.height)
+            val x = ((high.width * fit * zoomLevel - size.width) / 2).coerceAtLeast(0f)
+            val y = ((high.height * fit * zoomLevel - size.height) / 2).coerceAtLeast(0f)
+            return Offset(point.x.coerceIn(-x, x), point.y.coerceIn(-y, y))
+        }
+        val state = rememberTransformableState { factor, pan, _ ->
+            val next = (scale * factor).coerceIn(1f, 6f)
+            offset = bounded(offset * (next / scale) + pan, next)
+            scale = next
+        }
+        Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds().testTag("photo-viewer")
+            .onSizeChanged { size = it }) {
+            Image(high, label, Modifier.fillMaxSize().transformable(state).pointerInput(high, size) {
+                detectTapGestures(onDoubleTap = { tap ->
+                    scale = if (scale > 1f) 1f else 2.5f
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    offset = bounded((center - tap) * (scale - 1f), scale)
+                })
+            }.graphicsLayer {
+                scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y
+            }, contentScale = ContentScale.Fit)
+            IconButton(onClick = { zoom = false }, modifier = Modifier.align(Alignment.TopEnd)
+                .displayCutoutPadding().padding(8.dp).background(Color.Black.copy(alpha = .55f), RoundedCornerShape(24.dp))
+                .semantics { contentDescription = "关闭大图" }) { Text("×", color = Color.White, fontSize = 28.sp) }
         }
     }
 }

@@ -33,8 +33,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        savedInstanceState?.getString("currentEditor")?.let { model.resumeEditor(it, savedInstanceState.getString("editorOwner")) }
         setContent { RepriseApp(model) }
         if (savedInstanceState == null) handle(intent)
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (model.page == Page.EDITOR) {
+            outState.putString("currentEditor", Codec.json.toJson(model.editor))
+            outState.putString("editorOwner", model.owner)
+        }
     }
     override fun onResume() { super.onResume(); model.foreground() }
     override fun onNewIntent(intent: Intent) {
@@ -43,11 +51,13 @@ class MainActivity : ComponentActivity() {
     }
     @Suppress("DEPRECATION")
     private fun handle(intent: Intent?) {
-        if (intent?.action !in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return
-        intent ?: return
+        if (intent == null || intent.action !in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE, Intent.ACTION_VIEW)) return
         val photos = mutableListOf<Uri>()
-        if (intent.action == Intent.ACTION_SEND) intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let(photos::add)
-        else photos += intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+        when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data?.let(photos::add)
+            Intent.ACTION_SEND -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let(photos::add)
+            Intent.ACTION_SEND_MULTIPLE -> photos += intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+        }
         intent.clipData?.let { clip -> for (index in 0 until clip.itemCount) clip.getItemAt(index).uri?.let(photos::add) }
         model.shared(photos.distinct().filter { it.scheme == "content" })
     }
@@ -147,7 +157,7 @@ private fun Home(model: StudyModel) {
                 }
             }
             item { Button(onClick = { model.newEditor() }, modifier = Modifier.fillMaxWidth().testTag("new-card")) { Text("＋  录入一道题") } }
-            item { Heading("我的题本", "普通与永久重点分开复习，每道题只属于一本。") }
+            item { Heading("我的题本") }
             items(model.subjects.chunked(columns)) { keys ->
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     keys.forEach { key ->

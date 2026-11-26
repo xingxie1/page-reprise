@@ -3,6 +3,8 @@ package app.pagereprise
 import android.content.ClipData
 import android.content.ContentValues
 import android.content.Intent
+import android.app.ActivityManager
+import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.provider.MediaStore
@@ -29,7 +31,7 @@ class NotebookTest {
         screen.onNodeWithTag("new-card").performClick()
         screen.onNodeWithTag("question-text").performTextInput(title)
         screen.onNodeWithTag("save-card").assertIsNotEnabled()
-        screen.onNodeWithText("数学二", useUnmergedTree = true).performScrollTo().performClick()
+        screen.onNodeWithText("数学", useUnmergedTree = true).performScrollTo().performClick()
         screen.onNodeWithTag("save-card").performScrollTo().performClick()
         screen.waitUntil(10000) { model.cards.any { it.body.title == title } }
         screen.activityRule.scenario.recreate()
@@ -111,6 +113,26 @@ class NotebookTest {
             val draftId = model.editor.draft
             assertTrue(model.editor.subject.isEmpty())
             screen.onNodeWithTag("save-card").assertIsNotEnabled()
+            screen.onNodeWithText("数学", useUnmergedTree = true).performScrollTo().performClick()
+            screen.runOnIdle {
+                activity.startActivity(Intent(activity, MainActivity::class.java).apply {
+                    action = Intent.ACTION_VIEW
+                    setDataAndType(uri, "image/png")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+            }
+            screen.waitUntil(12000) { model.editor.body.answers.size == 1 && !model.busy }
+            assertEquals(draftId, model.editor.draft)
+            assertEquals("math", model.editor.subject)
+            assertEquals(listOf(hash), model.editor.body.pictures)
+            val tasks = (activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).appTasks
+            assertEquals(1, tasks.count { it.taskInfo.baseActivity?.className == MainActivity::class.java.name })
+            screen.onAllNodesWithContentDescription("第 1 张").onFirst().performScrollTo().performClick()
+            screen.onNodeWithTag("photo-viewer").assertIsDisplayed()
+            screen.onNodeWithContentDescription("关闭大图").performClick()
+            screen.onNodeWithText("移到题干").performScrollTo().performClick()
+            assertEquals(2, model.editor.body.pictures.size)
+            assertTrue(model.editor.body.answers.isEmpty())
             screen.onNodeWithText("仅存为本机草稿").performScrollTo().performClick()
             screen.waitUntil(10000) { model.drafts.any { it.draftId == draftId } }
             assertEquals(previous, model.cards.size)
