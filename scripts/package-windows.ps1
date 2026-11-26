@@ -39,8 +39,9 @@ try {
         '--add-modules', $modules, '--java-options', '-Dfile.encoding=UTF-8')
     if ($Format -eq 'Portable') {
         $output = Join-Path $dist "PageReprise-$version-Windows-x64.zip"
-        & tar.exe -a -cf $output -C $stage $product
-        if ($LASTEXITCODE) { throw 'Creating the portable ZIP failed.' }
+        $archive = Join-Path $stage 'portable.zip'
+        [IO.Compression.ZipFile]::CreateFromDirectory($image, $archive, [IO.Compression.CompressionLevel]::Optimal, $true, [Text.Encoding]::UTF8)
+        [IO.File]::Move($archive, $output, $true)
     } else {
         Invoke-Jpackage @('--type', 'exe', '--dest', $stage, '--name', $product, '--app-version', $version,
             '--vendor', 'PageReprise', '--app-image', $image, '--icon', 'desktop/package/bookmark.ico',
