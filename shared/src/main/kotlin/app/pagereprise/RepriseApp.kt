@@ -6,7 +6,6 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -28,14 +27,8 @@ fun RepriseApp(model: StudyModel, platformDialogs: @Composable () -> Unit = {}) 
         val todayList = key(model.owner) { rememberLazyListState() }
         val snacks = remember { SnackbarHostState() }
         var leave by remember { mutableStateOf(false) }
-        var bookMenuOpen by rememberSaveable(model.owner) { mutableStateOf(false) }
-        LaunchedEffect(model.page) { if (model.page != Page.BOOK) bookMenuOpen = false }
         val navigateBack: () -> Unit = {
-            when {
-                model.page == Page.BOOK && bookMenuOpen -> bookMenuOpen = false
-                !model.busy && model.page == Page.EDITOR && model.editor.body != Body() -> leave = true
-                else -> model.back()
-            }
+            if (!model.busy && model.page == Page.EDITOR && model.editor.body != Body()) leave = true else model.back()
         }
         PlatformBackHandler(model.page != Page.HOME && model.viewedPhoto == null) { navigateBack() }
         LaunchedEffect(model.message) {
@@ -68,12 +61,9 @@ fun RepriseApp(model: StudyModel, platformDialogs: @Composable () -> Unit = {}) 
                     if (model.busy || model.syncing) LinearProgressIndicator(Modifier.fillMaxWidth())
                     Box(Modifier.fillMaxWidth().weight(1f)) {
                         when (model.page) {
-                            Page.HOME -> Home(model) { subject ->
-                                model.openBook(subject, false)
-                                bookMenuOpen = true
-                            }
+                            Page.HOME -> Home(model)
                             Page.TODAY -> TodayScreen(model, todayList)
-                            Page.BOOK -> Book(model, bookMenuOpen) { bookMenuOpen = it }
+                            Page.BOOK -> Book(model)
                             Page.REVIEW -> Review(model)
                             Page.DETAIL -> {
                                 val card = model.cards.firstOrNull { it.id == model.selected }
@@ -117,7 +107,7 @@ internal fun Sheet(modifier: Modifier = Modifier, content: @Composable ColumnSco
 }
 
 @Composable
-private fun Home(model: StudyModel, chooseSubjectBook: (String) -> Unit) {
+private fun Home(model: StudyModel) {
     val colors = MaterialTheme.colorScheme
     val due = model.dueCards
     val unknown = model.waitingForLibrary
@@ -149,7 +139,7 @@ private fun Home(model: StudyModel, chooseSubjectBook: (String) -> Unit) {
                     keys.forEach { key ->
                         val own = model.cards.filter { it.subject == key }
                         Sheet(Modifier.weight(1f).testTag("subject:" + key).clip(RoundedCornerShape(16.dp))
-                            .clickable(role = Role.Button, onClickLabel = "选择" + Subjects.name(key) + "题本") { chooseSubjectBook(key) }) {
+                            .clickable(role = Role.Button, onClickLabel = "打开" + Subjects.name(key) + "题本") { model.openBook(key, false) }) {
                             Text(Subjects.name(key), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 for (focus in listOf(false, true)) {
@@ -207,97 +197,6 @@ private fun IssueBooks(model: StudyModel) {
         model.cards.filter { it.conflict }.groupBy { it.subject to it.plan.focus }.forEach { (scope, rows) ->
             OutlinedButton(onClick = { model.openBook(scope.first, scope.second) }) {
                 Text(Subjects.name(scope.first) + (if (scope.second) " · 重点" else " · 普通") + " · " + rows.size + " 题")
-            }
-        }
-    }
-}
-
-private val bookFilters = listOf("全部", "已到期", "已掌握", "待核对")
-
-private fun StudyModel.stepBook(step: Int) = openBook(subject, step > 0)
-
-@Composable
-private fun BookHeading(model: StudyModel, count: Int, expanded: Boolean, onExpand: (Boolean) -> Unit) {
-    Column {
-        Box {
-            Row(Modifier.fillMaxWidth().testTag("book-switcher").heightIn(min = 48.dp)
-                .clickable(role = Role.Button, onClickLabel = "切换题本") { onExpand(true) },
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(if (model.focus) "永久重点本" else "普通错题本",
-                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(if (expanded) "▴" else "▾", Modifier.padding(horizontal = 8.dp).clearAndSetSemantics { },
-                    color = MaterialTheme.colorScheme.primary)
-            }
-            DropdownMenu(expanded = expanded, onDismissRequest = { onExpand(false) }) {
-                for (focus in listOf(false, true)) {
-                    DropdownMenuItem(text = { Text(if (focus) "永久重点本" else "普通错题本") },
-                        leadingIcon = { RadioButton(selected = model.focus == focus, onClick = null) },
-                        onClick = { onExpand(false); model.openBook(model.subject, focus) },
-                        modifier = Modifier.testTag("choose-book:" + focus))
-                }
-            }
-        }
-        Text(Subjects.name(model.subject) + " · 共 " + count + " 题", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun Book(model: StudyModel, menuOpen: Boolean, onMenuChange: (Boolean) -> Unit) {
-    val book = model.book
-    val list = rememberLazyListState()
-    var query by rememberSaveable(model.subject, model.focus) { mutableStateOf("") }
-    var filter by rememberSaveable(model.subject, model.focus) { mutableStateOf("全部") }
-    var peek by rememberSaveable(model.subject, model.focus) { mutableStateOf("") }
-    val items = book.filter { (query.isBlank() || (it.label + " " + it.body.source + " " + it.body.tags.joinToString(" ")).contains(query, true)) && when(filter) {
-        "已到期" -> it.due(model.today); "已掌握" -> it.plan.due == null; "待核对" -> it.conflict; else -> true
-    } }
-    val stepFilter: (Int) -> Unit = { step ->
-        bookFilters.getOrNull(bookFilters.indexOf(filter) + step)?.let { filter = it }
-    }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = maxWidth >= 760.dp
-        Row(Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.weight(1f).fillMaxHeight().testTag("book-list").onNotebookSwipe { startY ->
-                val layout = list.layoutInfo
-                val visible = layout.visibleItemsInfo
-                val search = visible.firstOrNull { it.key == "book-search" }
-                if (search == null) {
-                    if (visible.any { it.key == "book-heading" || it.key == "book-actions" }) model::stepBook else stepFilter
-                } else {
-                    val top = search.offset - layout.viewportStartOffset
-                    when {
-                        startY < top -> model::stepBook
-                        startY >= top + search.size -> stepFilter
-                        else -> null
-                    }
-                }
-            }, state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item(key = "book-heading") { BookHeading(model, book.size, menuOpen, onMenuChange) }
-                item(key = "book-actions") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(onClick = { model.start(false) }, enabled = book.any { it.due(model.today) }) { Text("开始到期复习") }
-                        OutlinedButton(onClick = { model.start(true, items) }, enabled = items.any { !it.conflict }) { Text("手动抽练") }
-                        TextButton(onClick = { model.newEditor(model.subject) }) { Text("＋ 录题") }
-                        if (!model.focus) TextButton(onClick = model::openTrash) { Text("回收站") }
-                    }
-                }
-                item(key = "book-search") { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth().testTag("book-search"), singleLine = true, label = { Text("只搜索这一本") }) }
-                item { FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    bookFilters.forEach { key -> FilterChip(filter == key, { filter = key }, { Text(key) }, modifier = Modifier.testTag("filter:" + key)) }
-                } }
-                if (items.isEmpty()) item { Sheet { Heading("这里还没有题", "可以调整筛选，或录入第一道题。") } }
-                items(items, key = { it.id }) { card ->
-                    Sheet(Modifier.fillMaxWidth().clickable { if (wide) peek = card.id else model.detail(card) }) {
-                        Text(card.label, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                        Text(status(card), style = MaterialTheme.typography.bodySmall, color = if (card.conflict) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            if (wide) {
-                VerticalDivider()
-                Box(Modifier.weight(1.15f)) { items.firstOrNull { it.id == peek }?.let { Details(model, it) } ?: Text("选一道题，在这里预览。", Modifier.padding(24.dp)) }
             }
         }
     }

@@ -2,10 +2,14 @@ package app.pagereprise
 
 import android.view.Window
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -25,13 +29,28 @@ internal fun Context.inputFile(uri: Uri) = InputFile {
     requireNotNull(contentResolver.openInputStream(uri))
 }
 
+internal class AlbumPicker : ActivityResultContracts.PickMultipleVisualMedia(16) {
+    override fun createIntent(context: Context, input: PickVisualMediaRequest): Intent {
+        val picker = super.createIntent(context, input)
+        if (Build.VERSION.SDK_INT >= 35 && picker.action == MediaStore.ACTION_PICK_IMAGES) {
+            picker.putExtra(MediaStore.EXTRA_PICK_IMAGES_LAUNCH_TAB, MediaStore.PICK_IMAGES_TAB_ALBUMS)
+            picker.putExtra(MediaStore.EXTRA_PICK_IMAGES_IN_ORDER, true)
+        }
+        if (picker.action == Intent.ACTION_OPEN_DOCUMENT) {
+            val gallery = Intent(Intent.ACTION_PICK).setType("image/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            if (gallery.resolveActivity(context.packageManager) != null) return gallery
+        }
+        return picker
+    }
+}
+
 @Composable
 internal fun rememberImagePicker(receive: (List<InputFile>) -> Unit): () -> Unit {
     val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) {
-        receive(it.map(context::inputFile))
+    val picker = rememberLauncherForActivityResult(remember { AlbumPicker() }) { uris ->
+        if (uris.isNotEmpty()) receive(uris.map(context::inputFile))
     }
-    return { picker.launch(arrayOf("image/*")) }
+    return { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
 }
 
 @Composable

@@ -9,6 +9,8 @@ import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowState
+import com.sun.jna.platform.win32.KnownFolders
+import com.sun.jna.platform.win32.Shell32Util
 import java.awt.Image
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
@@ -65,15 +67,22 @@ internal fun CaptureTools(model: StudyModel) {
     }
 }
 
+internal fun imageFileChooser(): JFileChooser {
+    val pictures = runCatching { File(Shell32Util.getKnownFolderPath(KnownFolders.FOLDERID_Pictures)) }.getOrNull()
+    val initial = pictures?.takeIf(File::isDirectory)
+        ?: File(System.getProperty("user.home"), "Pictures").takeIf(File::isDirectory)
+    return JFileChooser(initial).apply {
+        dialogTitle = "选择题图"
+        isMultiSelectionEnabled = true
+        fileFilter = FileNameExtensionFilter("题图", *imageExtensions.toTypedArray())
+    }
+}
+
 @Composable
 internal fun rememberImagePicker(receive: (List<InputFile>) -> Unit): () -> Unit {
     val parent = LocalDesktop.current?.window
     return {
-        val chooser = JFileChooser().apply {
-            dialogTitle = "选择题图"
-            isMultiSelectionEnabled = true
-            fileFilter = FileNameExtensionFilter("题图", *imageExtensions.toTypedArray())
-        }
+        val chooser = imageFileChooser()
         if (chooser.showOpenDialog(parent) == JFileChooser.APPROVE_OPTION) {
             receive(chooser.selectedFiles.map { InputFile(it::inputStream) })
         }

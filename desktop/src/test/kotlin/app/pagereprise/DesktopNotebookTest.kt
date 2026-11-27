@@ -8,6 +8,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import app.pagereprise.core.*
+import com.sun.jna.platform.win32.KnownFolders
+import com.sun.jna.platform.win32.Shell32Util
 import kotlinx.coroutines.*
 import org.junit.*
 import org.junit.Assert.*
@@ -16,6 +18,8 @@ import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
 import java.awt.datatransfer.UnsupportedFlavorException
 import java.awt.image.BufferedImage
+import java.io.File
+import javax.swing.SwingUtilities
 
 class DesktopNotebookTest {
     @get:Rule val ui = createComposeRule()
@@ -52,7 +56,8 @@ class DesktopNotebookTest {
     @Test fun subjectCardChooserAndMouseDragsUseTheStartingRegion() {
         val subject = ui.onNodeWithTag("subject:math")
         subject.performScrollTo().performMouseInput { click(Offset(width * .85f, height * .18f)) }
-        ui.onNodeWithTag("choose-book:true").performClick()
+        ui.onNodeWithTag("choose-book:false").assertIsDisplayed().assertIsSelected()
+        ui.onNodeWithTag("choose-book:true").assertIsDisplayed().assertIsNotSelected().performClick()
         ui.runOnIdle { assertEquals("math", model.subject); assertTrue(model.focus) }
         fun drag(node: SemanticsNodeInteraction, left: Boolean, y: Float = .5f) {
             node.performMouseInput {
@@ -66,19 +71,75 @@ class DesktopNotebookTest {
         val list = ui.onNodeWithTag("book-list")
         drag(heading, left = false)
         ui.runOnIdle { assertFalse(model.focus) }
-        ui.onNodeWithTag("choose-book:false").assertDoesNotExist()
+        ui.onNodeWithTag("choose-book:false").assertIsSelected()
         drag(list, left = true, y = .85f)
         ui.onNodeWithTag("filter:已到期").assertIsSelected()
         drag(ui.onNodeWithTag("book-search"), left = true)
         ui.onNodeWithTag("filter:已到期").assertIsSelected()
         ui.runOnIdle { assertFalse(model.focus) }
-        heading.performClick()
         ui.onNodeWithTag("choose-book:true").performClick()
         ui.onNodeWithTag("filter:全部").assertIsSelected()
         ui.onNodeWithText("‹ 返回").performClick()
         ui.onNodeWithTag("book:math:true").performMouseInput { click() }
-        ui.onNodeWithTag("choose-book:true").assertDoesNotExist()
+        ui.onNodeWithTag("choose-book:true").assertIsSelected()
         ui.runOnIdle { assertTrue(model.focus) }
+    }
+
+    @Test fun bookAndFilterPagesSlideInTheRequestedDirection() {
+        ui.onNodeWithTag("book:math:false").performClick()
+        val list = ui.onNodeWithTag("book-list")
+        val preview = ui.onNodeWithText("选一道题，在这里预览。")
+        val left = list.fetchSemanticsNode().positionInRoot.x
+        val width = list.fetchSemanticsNode().size.width.toFloat()
+        val previewBounds = preview.fetchSemanticsNode().boundsInRoot
+        fun assertPageTurn(direction: Int, switch: () -> Unit) {
+            ui.mainClock.autoAdvance = false
+            try {
+                switch()
+                val moved = (1..24).any {
+                    ui.mainClock.advanceTimeByFrame()
+                    val distance = direction * (list.fetchSemanticsNode().positionInRoot.x - left)
+                    distance > 1f && distance < width - 1f
+                }
+                assertTrue("An intermediate frame should show the incoming page", moved)
+                assertEquals(previewBounds, preview.fetchSemanticsNode().boundsInRoot)
+            } finally { ui.mainClock.autoAdvance = true }
+            ui.waitForIdle()
+            assertEquals(left, list.fetchSemanticsNode().positionInRoot.x, 1f)
+        }
+        assertPageTurn(1) {
+            ui.onNodeWithTag("book-switcher").performTouchInput { swipeLeft() }
+        }
+        ui.onNodeWithTag("choose-book:true").assertIsSelected()
+        ui.onNodeWithTag("filter:已到期").performClick().assertIsSelected()
+        assertPageTurn(-1) {
+            list.performTouchInput { swipe(Offset(width * .2f, height * .85f), Offset(width * .8f, height * .85f)) }
+        }
+        ui.onNodeWithTag("filter:全部").assertIsSelected()
+    }
+
+    @Test fun typingInTheSearchFieldKeepsTheCurrentPageAndQuery() {
+        ui.onNodeWithTag("book:math:false").performClick()
+        val search = ui.onNodeWithTag("book-search")
+        search.performClick().performTextInput("二重")
+        search.performTextInput("积分")
+        search.assertIsFocused().assertTextContains("二重积分")
+        ui.onNodeWithTag("filter:已到期").performClick()
+        search.assertTextContains("二重积分")
+        ui.onNodeWithTag("choose-book:true").performClick()
+        search.assertTextEquals("只搜索这一本", "")
+        ui.onNodeWithTag("filter:全部").assertIsSelected()
+    }
+
+    @Test fun imageImportStartsInTheWindowsPicturesFolder() {
+        SwingUtilities.invokeAndWait {
+            val chooser = imageFileChooser()
+            val pictures = runCatching { File(Shell32Util.getKnownFolderPath(KnownFolders.FOLDERID_Pictures)) }.getOrNull()
+            if (pictures?.isDirectory == true) assertEquals(pictures.canonicalFile, chooser.currentDirectory.canonicalFile)
+            assertTrue(chooser.isMultiSelectionEnabled)
+            assertTrue(chooser.fileFilter.accept(File("test.png")))
+            assertFalse(chooser.fileFilter.accept(File("backup.zip")))
+        }
     }
 
     @Test fun scrollingPastSearchLeavesRowsInTheFilterSwipeRegion() {

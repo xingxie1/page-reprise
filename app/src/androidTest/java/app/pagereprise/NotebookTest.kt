@@ -30,7 +30,8 @@ class NotebookTest {
         screen.onNodeWithTag("subject:english").performScrollTo().performTouchInput {
             click(Offset(width * .78f, height * .18f))
         }
-        screen.onNodeWithTag("choose-book:true").performClick()
+        screen.onNodeWithTag("choose-book:false").assertIsDisplayed().assertIsSelected()
+        screen.onNodeWithTag("choose-book:true").assertIsDisplayed().assertIsNotSelected().performClick()
         val heading = screen.onNodeWithTag("book-switcher")
         heading.performTouchInput { swipeRight() }
         screen.runOnIdle { assertEquals("english", model.subject); assertFalse(model.focus) }
@@ -53,12 +54,11 @@ class NotebookTest {
         screen.onNodeWithTag("book-search").performTouchInput { swipeRight() }
         screen.onNodeWithTag("filter:已掌握").assertIsSelected()
         screen.runOnIdle { assertTrue(model.focus) }
-        heading.performClick()
         screen.onNodeWithTag("choose-book:false").performClick()
         screen.onNodeWithTag("filter:全部").assertIsSelected()
         screen.onNodeWithText("‹ 返回").performClick()
         screen.onNodeWithTag("book:english:true").performScrollTo().performTouchInput { click(center) }
-        screen.onNodeWithTag("choose-book:true").assertDoesNotExist()
+        screen.onNodeWithTag("choose-book:true").assertIsSelected()
         screen.runOnIdle { assertTrue(model.focus) }
     }
 
