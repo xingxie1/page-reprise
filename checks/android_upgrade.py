@@ -59,7 +59,15 @@ if __name__ == "__main__":
     before = version()
     assert tuple(map(int, before.split("."))) < tuple(map(int, target.split("."))), (before, target)
     print(f"Starting the installed {before} to update to {target}", flush=True)
-    adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
+    for _ in range(20):
+        networks = adb("shell", "dumpsys", "connectivity")
+        if any("VALIDATED" in line and "INTERNET" in line for line in networks.splitlines()):
+            break
+        time.sleep(2)
+    launch = ("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
+    adb(*launch)
+    next_inspection = time.monotonic() + 20
+    last_state = None
     deadline = time.monotonic() + 210
     last_screen = []
     while time.monotonic() < deadline:
@@ -69,6 +77,24 @@ if __name__ == "__main__":
         try:
             nodes = visible_nodes()
             last_screen = [n.get("text") for n in nodes if n.get("text")]
+            state = [text for text in last_screen if text not in {"设置", "循页"}][:5]
+            if state != last_state:
+                print("Screen:", state, flush=True)
+                last_state = state
+            if "版本更新" in last_screen:
+                idx = last_screen.index("版本更新")
+                print("Update status:", last_screen[idx:idx + 4], flush=True)
+                adb("shell", "input", "keyevent", "KEYCODE_BACK")
+                if any("更新检查未完成" in text for text in last_screen):
+                    adb("shell", "am", "force-stop", PACKAGE)
+                    adb(*launch)
+                next_inspection = time.monotonic() + 30
+            elif ("今日复习" in last_screen and time.monotonic() >= next_inspection
+                  and not any("正在下载" in text for text in last_screen)):
+                settings = next((n for n in nodes if n.get("package") == PACKAGE and n.get("text") == "设置"), None)
+                if settings is not None:
+                    tap(settings)
+                    next_inspection = time.monotonic() + 30
             action = confirm_update(nodes)
             if action:
                 print(action, flush=True)
