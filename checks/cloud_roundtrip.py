@@ -103,7 +103,7 @@ if __name__ == "__main__":
     remote = "reprise-images/" + who + "/" + photo
     identity = str(uuid.uuid4())
     event = {"id": identity, "card": identity, "kind": "CREATE", "at": 1800000000000, "base": "",
-             "value": "math", "refs": [], "body": {"title": "math", "source": "", "solution": "", "pictures": [photo], "answers": []}}
+             "value": "math", "number": 7, "refs": [], "body": {"title": "math", "source": "", "solution": "", "pictures": [photo], "answers": []}}
     row = {"owner": who, "event_id": identity, "card_id": identity, "payload": event}
     for device in (access, phone["access_token"]):
         ok(request("/rest/v1/study_events?on_conflict=owner,event_id", public, device, [row],

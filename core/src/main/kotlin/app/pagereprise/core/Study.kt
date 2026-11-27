@@ -217,7 +217,7 @@ object Library {
                 mark.id in restoration.refs && restoration.at >= mark.at && restoration.at < mark.at + TRASH_LIFETIME
             }
         }.sortedBy { it.id }
-        val number = if (subject == creation.value) creation.number else events.asSequence()
+        val number = creation.number?.takeIf { subject == creation.value } ?: events.asSequence()
             .filter { it.kind == Kind.MOVE && it.value == subject && it.number != null }
             .minWithOrNull(compareBy<Event> { it.at }.thenBy { it.id })?.number
         return Card(creation.card, subject, body, plan, round, active, moves, edits, history, conflict, scoreVersion,

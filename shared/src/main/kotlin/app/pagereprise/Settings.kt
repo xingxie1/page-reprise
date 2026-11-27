@@ -25,6 +25,15 @@ internal fun Settings(model: StudyModel) {
     val importer = rememberBackupImporter(model::stage)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Heading("账号与数据", "数据只在自己的账号和设备间流转。")
+        model.updates?.let { updates ->
+            Sheet(Modifier.fillMaxWidth()) {
+                Heading("版本更新", "当前版本 " + updates.installed)
+                Text(updates.status, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = { updates.check() }, enabled = !updates.downloading && !updates.installing) {
+                    Text(if (updates.prepared == null) "检查更新" else "重试安装")
+                }
+            }
+        }
         Sheet(Modifier.fillMaxWidth()) {
             val auth = model.session
             if (auth == null) {

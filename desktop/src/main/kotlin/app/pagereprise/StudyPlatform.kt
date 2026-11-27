@@ -1,5 +1,7 @@
 package app.pagereprise
 
+import app.pagereprise.core.Edition
+import kotlinx.coroutines.CoroutineScope
 import app.pagereprise.core.Codec
 import app.pagereprise.core.digest
 import com.sun.jna.platform.win32.Crypt32Util
@@ -29,14 +31,12 @@ internal fun writeAtomically(file: File, body: (OutputStream) -> Unit) {
 class AppPreferences(private val file: File) {
     private val values = Properties().apply { if (file.isFile) file.inputStream().use(::load) }
     fun getString(key: String, fallback: String?): String? = values.getProperty(key, fallback)
-    fun getBoolean(key: String, fallback: Boolean) = values.getProperty(key)?.toBooleanStrictOrNull() ?: fallback
     fun getLong(key: String, fallback: Long) = values.getProperty(key)?.toLongOrNull() ?: fallback
     fun putString(key: String, value: String) {
         values.setProperty(key, value)
         writeAtomically(file) { values.store(it, null) }
     }
     fun putLong(key: String, value: Long) = putString(key, value.toString())
-    fun putBoolean(key: String, value: Boolean) = putString(key, value.toString())
 }
 
 class Vault(private val file: File) {
@@ -60,13 +60,17 @@ class StudyPlatform(val directory: File) {
     val prefs = AppPreferences(File(directory, "preferences.properties"))
     val vault = Vault(File(directory, "session.dpapi"))
     fun media(owner: String) = Media(directory, owner)
+    fun updates(scope: CoroutineScope): AppUpdates? = System.getProperty("jpackage.app-version")?.let { version ->
+        AppUpdates(version, Edition.WINDOWS, File(directory, "updates"), scope)
+    }
     private var scheduled: Long? = null
 
     @Synchronized fun scheduleCleanup(owner: String, deadline: Long) {
         val executable = System.getProperty("jpackage.app-path") ?: return
         if (scheduled == deadline || !owner.startsWith("local:")) return
         val task = "PageReprise-Trash-" + digest(directory.canonicalPath.toByteArray()).take(16)
-        val start = Instant.ofEpochMilli(deadline).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        // Task Scheduler uses whole seconds. Round up so collection never runs before expiry.
+        val start = Instant.ofEpochSecond(Math.floorDiv(deadline + 999L, 1000L)).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         val xml = """<?xml version="1.0" encoding="UTF-16"?>
             <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
               <Triggers><TimeTrigger><StartBoundary>$start</StartBoundary><Enabled>true</Enabled></TimeTrigger></Triggers>

@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     override fun onResume() { super.onResume(); model.foreground() }
+    override fun onPause() { model.updates?.background(); super.onPause() }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         model.shared(sharedImages(intent).map { inputFile(it) })

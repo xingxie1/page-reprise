@@ -38,6 +38,7 @@ fun main(args: Array<String>) {
     }
     runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
     val directory = dataDirectory().apply { mkdirs() }
+    if (updateInProgress(directory)) return
     try {
         FileChannel.open(File(directory, "window.lock").toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
             val lock = channel.tryLock()
@@ -88,13 +89,16 @@ private fun openDesktop(platform: StudyPlatform) {
                 val host = remember(window, state) { DesktopHost(window, state, handlers) }
                 DisposableEffect(window) {
                     window.minimumSize = Dimension(480, 360)
-                    val focus = object : WindowAdapter() { override fun windowGainedFocus(e: WindowEvent) = model.foreground() }
+                    val focus = object : WindowAdapter() {
+                        override fun windowGainedFocus(e: WindowEvent) = model.foreground()
+                        override fun windowLostFocus(e: WindowEvent) { model.updates?.background() }
+                    }
                     window.addWindowFocusListener(focus)
                     val removeDrop = attachDrop(window.contentPane, model)
                     model.foreground()
                     onDispose { removeDrop(); window.removeWindowFocusListener(focus) }
                 }
-                CompositionLocalProvider(LocalDesktop provides host) {
+                CompositionLocalProvider(LocalDesktop provides host, LocalUpdateExit provides { exitApplication() }) {
                     RepriseApp(model)
                     if (confirmClose) AlertDialog(onDismissRequest = { confirmClose = false },
                         title = { Text("关闭循页前保存这道题？") },

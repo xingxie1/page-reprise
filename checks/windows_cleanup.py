@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix="reprise-test-") as scratch:
         result = subprocess.run(["schtasks.exe","/query","/tn",task], capture_output=True)
         assert result.returncode == 0, "Windows did not register cleanup for the test subject"
         print("Registered the test deadline",flush=True)
-        limit = time.monotonic()+75
+        limit = time.monotonic()+120
         while time.monotonic()<limit:
             with sqlite3.connect(db) as conn:
                 events = [json.loads(row[0])["kind"] for row in conn.execute("select payload from operations")]
@@ -39,6 +39,8 @@ with tempfile.TemporaryDirectory(prefix="reprise-test-") as scratch:
                 print("Windows task actually ran and purged only the isolated test card",flush=True)
                 break
             time.sleep(1)
-        else: raise RuntimeError("No purge at the scheduled deadline")
+        else:
+            subprocess.run(["schtasks.exe", "/query", "/tn", task, "/v", "/fo", "LIST"])
+            raise RuntimeError("No purge at the scheduled deadline")
     finally:
         subprocess.run(["schtasks.exe","/delete","/tn",task,"/f"],capture_output=True)

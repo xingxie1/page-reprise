@@ -17,6 +17,9 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     private val store = platform.store
     private val vault = platform.vault
     private val prefs = platform.prefs
+    val updates = platform.updates(scope)
+    val canInstallUpdate get() = updates?.let { it.active && ready && !busy && !syncing && viewedPhoto == null &&
+        (page == Page.HOME || (page == Page.SETTINGS && it.manual)) } == true
     private val cloud = Cloud()
     private val guest = prefs.getString("guest", null) ?: ("local:" + newId()).also { prefs.putString("guest", it) }
     var session by mutableStateOf(runCatching { vault.read() }.getOrNull()); private set
@@ -116,6 +119,7 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     }
 
     fun foreground() {
+        updates?.foreground()
         today = StudyDays.today()
         scope.launch { reload() }
         sync()

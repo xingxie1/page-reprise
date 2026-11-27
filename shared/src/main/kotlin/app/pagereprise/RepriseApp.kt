@@ -57,6 +57,8 @@ fun RepriseApp(model: StudyModel) {
                         }, style = MaterialTheme.typography.labelMedium, color = Pine)
                         if (model.page == Page.HOME) TextButton(onClick = model::settings) { Text("设置") }
                     }
+                    if (model.updates?.downloading == true) Text(model.updates.status, Modifier.padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.labelSmall)
                     if (model.busy || model.syncing) LinearProgressIndicator(Modifier.fillMaxWidth())
                     Box(Modifier.fillMaxWidth().weight(1f)) {
                         when (model.page) {
@@ -79,6 +81,9 @@ fun RepriseApp(model: StudyModel) {
             }
             model.viewedPhoto?.let { photo -> FullScreenPhoto(model, photo) }
         }
+        UpdateHost(model)
+        if (model.updates?.installing == true) AlertDialog(onDismissRequest = {}, title = { Text("正在安装更新") },
+            text = { Text("请等待系统完成安装。") }, confirmButton = {})
         if (leave) AlertDialog(onDismissRequest = { leave = false }, title = { Text("离开当前编辑？") },
             text = { Text(if (model.editor.card == null) "可以暂存为本机草稿，之后再选科、补图。" else "未保存的改动不会写入题目。") },
             confirmButton = { TextButton(onClick = { leave = false; if (model.editor.card == null) model.saveDraft() else model.saveCard() }) { Text(if (model.editor.card == null) "暂存离开" else "保存离开") } },
