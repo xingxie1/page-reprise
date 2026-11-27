@@ -100,6 +100,7 @@ internal fun FullScreenPhoto(model: StudyModel, photo: ViewedPhoto) {
 @Composable
 internal fun CropDialog(model: StudyModel, hash: String, cancel: () -> Unit, apply: (List<Float>) -> Unit) {
     val image = loaded(model, hash, 1800)
+    val colors = MaterialTheme.colorScheme
     var start by remember(hash) { mutableStateOf(Offset.Zero) }
     var end by remember(hash) { mutableStateOf(Offset(1f, 1f)) }
     AlertDialog(onDismissRequest = cancel, title = { Text("裁出这道题") },
@@ -119,8 +120,9 @@ internal fun CropDialog(model: StudyModel, hash: String, cancel: () -> Unit, app
                         Canvas(Modifier.fillMaxSize()) {
                             val origin = Offset(minOf(start.x, end.x) * size.width, minOf(start.y, end.y) * size.height)
                             val area = Size(abs(start.x - end.x) * size.width, abs(start.y - end.y) * size.height)
-                            drawRect(Color(0x4414634A), origin, area)
-                            drawRect(Color(0xFF168A64), origin, area, style = Stroke(3.dp.toPx()))
+                            drawRect(colors.primary.copy(alpha = .18f), origin, area)
+                            drawRect(colors.onPrimary, origin, area, style = Stroke(5.dp.toPx()))
+                            drawRect(colors.primary, origin, area, style = Stroke(2.dp.toPx()))
                         }
                     }
                 }

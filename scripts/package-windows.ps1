@@ -36,7 +36,7 @@ try {
     $modules = 'java.base,java.desktop,java.sql,java.logging,java.management,java.naming,java.prefs,java.xml,java.net.http,java.security.jgss,jdk.crypto.ec,jdk.unsupported,jdk.charsets,jdk.localedata'
     Invoke-Jpackage @('--type', 'app-image', '--dest', $stage, '--name', $launcher, '--app-version', $version,
         '--vendor', 'PageReprise', '--description', '循页错题本', '--input', 'desktop/build/install/desktop/lib',
-        '--main-jar', 'desktop.jar', '--main-class', 'app.pagereprise.DesktopKt', '--icon', 'desktop/package/bookmark.ico',
+        '--main-jar', 'desktop.jar', '--main-class', 'app.pagereprise.DesktopKt', '--icon', 'desktop/package/reprise-loop.ico',
         '--add-modules', $modules, '--java-options', '-Dfile.encoding=UTF-8', '--java-options', '-Djava.net.useSystemProxies=true')
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
     $helper = Join-Path $image 'app/PageReprise.Update.exe'
@@ -49,7 +49,7 @@ try {
         [IO.File]::Move($archive, $output, $true)
     } else {
         Invoke-Jpackage @('--type', 'exe', '--dest', $stage, '--name', $product, '--app-version', $version,
-            '--vendor', 'PageReprise', '--app-image', $image, '--icon', 'desktop/package/bookmark.ico',
+            '--vendor', 'PageReprise', '--app-image', $image, '--icon', 'desktop/package/reprise-loop.ico',
             '--resource-dir', 'desktop/package', '--win-per-user-install', '--install-dir', 'PageRepriseDesktop', '--win-shortcut', '--win-menu',
             '--win-menu-group', $product, '--win-upgrade-uuid', 'dcf346c4-c09b-43fd-9589-8525ce79174c')
         $output = Join-Path $dist "PageReprise-$version-Windows-x64.exe"

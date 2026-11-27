@@ -3,11 +3,15 @@ package app.pagereprise
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
 import app.pagereprise.core.Body
+import com.sun.jna.Native
+import com.sun.jna.NativeLibrary
+import com.sun.jna.ptr.IntByReference
 import com.sun.jna.platform.win32.User32
 import com.sun.jna.platform.win32.WinUser
 import kotlinx.coroutines.*
@@ -27,6 +31,17 @@ import javax.swing.SwingUtilities
 import javax.swing.UIManager
 
 private fun dataDirectory() = File(requireNotNull(System.getenv("LOCALAPPDATA")), "PageReprise/data")
+
+@Composable
+internal fun brandIcon() = painterResource("reprise-loop.png")
+
+private fun darkTitleBar(window: java.awt.Window) {
+    // Older Windows builds can decline DWMWA_USE_IMMERSIVE_DARK_MODE (20).
+    runCatching {
+        NativeLibrary.getInstance("dwmapi").getFunction("DwmSetWindowAttribute")
+            .invokeInt(arrayOf(Native.getWindowPointer(window), 20, IntByReference(1), Int.SIZE_BYTES))
+    }
+}
 
 fun main(args: Array<String>) {
     if (args.size == 2 && args.first() == "--collect-trash") {
@@ -76,7 +91,7 @@ private fun openDesktop(platform: StudyPlatform) {
                     else -> exitApplication()
                 }
             }
-            Window(onCloseRequest = close, state = state, title = "循页", icon = painterResource("bookmark.png"),
+            Window(onCloseRequest = close, state = state, title = "循页", icon = brandIcon(),
                 onPreviewKeyEvent = { key ->
                     when {
                         key.type != KeyEventType.KeyDown -> false
@@ -88,29 +103,35 @@ private fun openDesktop(platform: StudyPlatform) {
                 }) {
                 val host = remember(window, state) { DesktopHost(window, state, handlers) }
                 DisposableEffect(window) {
+                    window.background = java.awt.Color(graphiteColors.background.toArgb())
                     window.minimumSize = Dimension(480, 360)
                     val focus = object : WindowAdapter() {
+                        override fun windowOpened(e: WindowEvent) = darkTitleBar(e.window)
                         override fun windowGainedFocus(e: WindowEvent) = model.foreground()
                         override fun windowLostFocus(e: WindowEvent) { model.updates?.background() }
                     }
+                    if (window.isDisplayable) darkTitleBar(window) else window.addWindowListener(focus)
                     window.addWindowFocusListener(focus)
                     val removeDrop = attachDrop(window.contentPane, model)
                     model.foreground()
-                    onDispose { removeDrop(); window.removeWindowFocusListener(focus) }
+                    onDispose { removeDrop(); window.removeWindowFocusListener(focus); window.removeWindowListener(focus) }
                 }
                 CompositionLocalProvider(LocalDesktop provides host, LocalUpdateExit provides { exitApplication() }) {
-                    RepriseApp(model)
-                    if (confirmClose) AlertDialog(onDismissRequest = { confirmClose = false },
-                        title = { Text("关闭循页前保存这道题？") },
-                        confirmButton = { TextButton(onClick = {
-                            confirmClose = false
-                            if (model.editor.card == null) model.saveDraft() else model.saveCard()
-                            closeAfterSave = true
-                        }) { Text(if (model.editor.card == null) "暂存草稿并退出" else "保存并退出") } },
-                        dismissButton = {
-                            TextButton(onClick = { confirmClose = false }) { Text("继续编辑") }
-                            TextButton(onClick = ::exitApplication) { Text("放弃改动并退出") }
-                        })
+                    RepriseApp(model) {
+                        if (confirmClose) AlertDialog(onDismissRequest = { confirmClose = false },
+                            title = { Text("关闭循页前保存这道题？") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    confirmClose = false
+                                    if (model.editor.card == null) model.saveDraft() else model.saveCard()
+                                    closeAfterSave = true
+                                }) { Text(if (model.editor.card == null) "暂存草稿并退出" else "保存并退出") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { confirmClose = false }) { Text("继续编辑") }
+                                TextButton(onClick = ::exitApplication) { Text("放弃改动并退出") }
+                            })
+                    }
                 }
                 LaunchedEffect(closeAfterSave, model.busy) {
                     if (closeAfterSave && !model.busy) {

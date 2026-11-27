@@ -1,9 +1,13 @@
 <resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+    <color name="launcher_graphite">#191D23</color>
+    <color name="graphite_background">#191D20</color>
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:statusBarColor">#F8F6F0</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">#152D2A</item>
+        <item name="android:windowBackground">@color/graphite_background</item>
+        <item name="android:statusBarColor">@color/graphite_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/graphite_background</item>
+        <item name="android:colorAccent">#D7EF74</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>

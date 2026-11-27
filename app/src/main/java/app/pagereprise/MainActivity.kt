@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
@@ -16,7 +17,8 @@ class MainActivity : ComponentActivity() {
     private var initialShare: String? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val darkBars = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        enableEdgeToEdge(statusBarStyle = darkBars, navigationBarStyle = darkBars)
         savedInstanceState?.getString("currentEditor")?.let { model.resumeEditor(it, savedInstanceState.getString("editorOwner")) }
         setContent { CompositionLocalProvider(LocalAndroidWindow provides window) { RepriseApp(model) } }
         val photos = sharedImages(intent)

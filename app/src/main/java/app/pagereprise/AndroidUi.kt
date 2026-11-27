@@ -13,8 +13,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.core.view.*
 import java.io.File
+
+@Composable
+internal fun brandIcon() = painterResource(R.drawable.reprise_loop)
 
 internal fun Context.inputFile(uri: Uri) = InputFile {
     require(uri.scheme == "content") { "请选择系统分享或相册中的文件" }
