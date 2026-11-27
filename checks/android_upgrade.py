@@ -24,19 +24,31 @@ def visible_nodes():
     return list(ET.fromstring(adb("exec-out", "cat", "/sdcard/reprise-upgrade.xml")).iter("node"))
 
 
-def accept_installer(nodes):
+def tap(node):
+    left, top, right, bottom = map(int, re.findall(r"\d+", node.get("bounds")))
+    adb("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+
+
+def confirm_update(nodes):
     for node in nodes:
         owner = node.get("package", "")
-        if not (owner.endswith(".packageinstaller") or owner.endswith(".permissioncontroller")):
-            continue
-        if node.get("text", "").strip().lower() not in {"install", "update", "continue"}:
-            continue
-        if node.get("enabled") != "true" or node.get("clickable") != "true":
-            continue
-        left, top, right, bottom = map(int, re.findall(r"\d+", node.get("bounds")))
-        adb("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
-        print("Confirmed the Android system installer", flush=True)
-        return
+        label = node.get("text", "").strip().lower()
+        if owner == PACKAGE and label == "打开系统设置":
+            tap(node)
+            return "Opened permission settings from the app"
+        if owner == "com.android.settings" and node.get("checkable") == "true":
+            if node.get("enabled") != "true":
+                continue
+            if node.get("checked") == "true":
+                adb("shell", "input", "keyevent", "KEYCODE_BACK")
+                return "Returned after verifying the allowed source"
+            tap(node)
+            return "Allowed this app as an installation source"
+        if (owner.endswith(".packageinstaller") or owner.endswith(".permissioncontroller")) and label in {
+                "install", "update", "continue"} and node.get("enabled") == "true":
+            tap(node)
+            return "Confirmed the Android system installer"
+    return None
 
 
 if __name__ == "__main__":
@@ -47,7 +59,6 @@ if __name__ == "__main__":
     before = version()
     assert tuple(map(int, before.split("."))) < tuple(map(int, target.split("."))), (before, target)
     print(f"Starting the installed {before} to update to {target}", flush=True)
-    adb("shell", "appops", "set", PACKAGE, "REQUEST_INSTALL_PACKAGES", "allow")
     adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
     deadline = time.monotonic() + 210
     last_screen = []
@@ -58,7 +69,9 @@ if __name__ == "__main__":
         try:
             nodes = visible_nodes()
             last_screen = [n.get("text") for n in nodes if n.get("text")]
-            accept_installer(nodes)
+            action = confirm_update(nodes)
+            if action:
+                print(action, flush=True)
         except (subprocess.SubprocessError, ET.ParseError):
             pass  # The window also changes while the original process is being replaced.
         time.sleep(2)
