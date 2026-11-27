@@ -37,7 +37,7 @@ try {
     Invoke-Jpackage @('--type', 'app-image', '--dest', $stage, '--name', $launcher, '--app-version', $version,
         '--vendor', 'PageReprise', '--description', '循页错题本', '--input', 'desktop/build/install/desktop/lib',
         '--main-jar', 'desktop.jar', '--main-class', 'app.pagereprise.DesktopKt', '--icon', 'desktop/package/bookmark.ico',
-        '--add-modules', $modules, '--java-options', '-Dfile.encoding=UTF-8')
+        '--add-modules', $modules, '--java-options', '-Dfile.encoding=UTF-8', '--java-options', '-Djava.net.useSystemProxies=true')
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
     $helper = Join-Path $image 'app/PageReprise.Update.exe'
     & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/out:$helper" (Join-Path $repo 'desktop/package/InstallUpdate.cs')

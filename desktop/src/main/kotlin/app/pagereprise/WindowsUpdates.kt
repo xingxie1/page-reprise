@@ -31,7 +31,7 @@ private suspend fun startInstaller(update: PreparedUpdate, launcher: File) = wit
     File(launcher.parentFile, "app/PageReprise.Update.exe").copyTo(helper, overwrite = true)
     val ready = File(directory, UUID.randomUUID().toString() + ".ready")
     val process = ProcessBuilder(helper.path, ProcessHandle.current().pid().toString(), update.file.path,
-        update.asset.sha256, ready.path).start()
+        update.asset.sha256, ready.path).directory(directory).start()
     try {
         repeat(150) {
             if (ready.isFile) return@withContext
