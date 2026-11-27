@@ -3,6 +3,7 @@ package app.pagereprise
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,54 @@ class DesktopNotebookTest {
         }
         ui.runOnIdle { model.shared(transferImages(clipboard)) }
         ui.waitUntil(10000) { !model.busy }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun subjectCardChooserAndMouseDragsUseTheStartingRegion() {
+        val subject = ui.onNodeWithTag("subject:math")
+        subject.performScrollTo().performMouseInput { click(Offset(width * .85f, height * .18f)) }
+        ui.onNodeWithTag("choose-book:true").performClick()
+        ui.runOnIdle { assertEquals("math", model.subject); assertTrue(model.focus) }
+        fun drag(node: SemanticsNodeInteraction, left: Boolean, y: Float = .5f) {
+            node.performMouseInput {
+                moveTo(Offset(width * (if (left) .8f else .2f), height * y))
+                press()
+                moveTo(Offset(width * (if (left) .2f else .8f), height * y), delayMillis = 120)
+                release()
+            }
+        }
+        val heading = ui.onNodeWithTag("book-switcher")
+        val list = ui.onNodeWithTag("book-list")
+        drag(heading, left = false)
+        ui.runOnIdle { assertFalse(model.focus) }
+        ui.onNodeWithTag("choose-book:false").assertDoesNotExist()
+        drag(list, left = true, y = .85f)
+        ui.onNodeWithTag("filter:已到期").assertIsSelected()
+        drag(ui.onNodeWithTag("book-search"), left = true)
+        ui.onNodeWithTag("filter:已到期").assertIsSelected()
+        ui.runOnIdle { assertFalse(model.focus) }
+        heading.performClick()
+        ui.onNodeWithTag("choose-book:true").performClick()
+        ui.onNodeWithTag("filter:全部").assertIsSelected()
+        ui.onNodeWithText("‹ 返回").performClick()
+        ui.onNodeWithTag("book:math:true").performMouseInput { click() }
+        ui.onNodeWithTag("choose-book:true").assertDoesNotExist()
+        ui.runOnIdle { assertTrue(model.focus) }
+    }
+
+    @Test fun scrollingPastSearchLeavesRowsInTheFilterSwipeRegion() {
+        val cards = (1..30).map { Event.create("math", Body(title = "练习 " + it)) }
+        runBlocking { platform.store.merge(model.owner, cards, true) }
+        ui.runOnIdle { model.foreground(); model.openBook("math", false) }
+        ui.waitUntil(10000) { model.book.size == cards.size }
+        val list = ui.onNodeWithTag("book-list")
+        list.performTouchInput { swipeUp() }
+        ui.runOnIdle { assertFalse(model.focus); assertEquals(Page.BOOK, model.page) }
+        list.performScrollToIndex(20)
+        ui.onNodeWithTag("book-search").assertDoesNotExist()
+        list.performTouchInput { swipeLeft() }
+        ui.onNodeWithTag("filter:已到期").assertIsSelected()
+        ui.onNodeWithText("选一道题，在这里预览。").assertIsDisplayed()
     }
 
     @Test fun captureTwiceResumeDraftViewAndRestoreFromSubjectTrash() {

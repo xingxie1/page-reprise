@@ -8,6 +8,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.provider.MediaStore
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -23,6 +24,43 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class NotebookTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
+
+    @Test fun touchSwitchesTheSubjectBookOrFilterFromTheStartOfTheSwipe() {
+        val model = screen.activity.model
+        screen.onNodeWithTag("subject:english").performScrollTo().performTouchInput {
+            click(Offset(width * .78f, height * .18f))
+        }
+        screen.onNodeWithTag("choose-book:true").performClick()
+        val heading = screen.onNodeWithTag("book-switcher")
+        heading.performTouchInput { swipeRight() }
+        screen.runOnIdle { assertEquals("english", model.subject); assertFalse(model.focus) }
+        heading.performTouchInput { swipeLeft() }
+        heading.performTouchInput { swipeLeft() }
+        screen.runOnIdle { assertTrue(model.focus) }
+        val list = screen.onNodeWithTag("book-list")
+        fun switchBelow(left: Boolean) = list.performTouchInput {
+            val y = height * .88f
+            val start = Offset(width * .8f, y)
+            val end = Offset(width * .2f, y)
+            if (left) swipe(start, end) else swipe(end, start)
+        }
+        for (filter in listOf("已到期", "已掌握", "待核对", "待核对")) {
+            switchBelow(left = true)
+            screen.onNodeWithTag("filter:" + filter).assertIsSelected()
+        }
+        switchBelow(left = false)
+        screen.onNodeWithTag("filter:已掌握").assertIsSelected()
+        screen.onNodeWithTag("book-search").performTouchInput { swipeRight() }
+        screen.onNodeWithTag("filter:已掌握").assertIsSelected()
+        screen.runOnIdle { assertTrue(model.focus) }
+        heading.performClick()
+        screen.onNodeWithTag("choose-book:false").performClick()
+        screen.onNodeWithTag("filter:全部").assertIsSelected()
+        screen.onNodeWithText("‹ 返回").performClick()
+        screen.onNodeWithTag("book:english:true").performScrollTo().performTouchInput { click(center) }
+        screen.onNodeWithTag("choose-book:true").assertDoesNotExist()
+        screen.runOnIdle { assertTrue(model.focus) }
+    }
 
     @Test fun captureRequiresSubjectAndSurvivesActivityRecreation() {
         val title = "积分换元 · " + newId().take(6)
