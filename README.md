@@ -63,4 +63,5 @@ Windows 和 Android 直接编译同一份界面、同步和复习逻辑，以同
 - [Android 构建](../../actions/workflows/android.yml)：推送时运行排期、离线冲突和备份单元测试，并生成 debug APK、测试 APK 和**未签名** release APK。流水线的 debug 身份用于测试，不作为长期分发签名。
 - [权限检查](../../actions/workflows/access.yml)：在一次性 PostgreSQL 中检查邀请码、只追加操作、不同账号及私有题图的隔离。
 - [云接口联测](../../actions/workflows/cloud-smoke.yml)：按需在临时 Supabase 测试两个登录会话、实际上传下载、重复提交和好友隔离，不使用真实用户资料。[Android 设备验收](../../actions/workflows/device.yml)在一次性模拟器执行实际页面操作。
+- [Android 正式版升级验收](../../actions/workflows/upgrade.yml)可在最新版本发布后运行。指定上一个带自动更新的签名版本，在手机和平板模拟器打开旧版，由应用下载公开安装包，再从系统包管理器读取升级结果。
 - 目标真机为小米 Pad 7 和小米 14 Pro，仍须验证 HyperOS 私下安装、Notein 分享菜单和手写题图清晰度。应用不申请通知或全盘读取权限。知识点复习、OCR、自动判分暂不开放。

@@ -1,0 +1,52 @@
+name: Android release upgrade
+on:
+  workflow_dispatch:
+    inputs:
+      from_tag:
+        description: Release or draft containing the earlier signed APK
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 30
+            target: default
+            size: 1080x1920
+            density: 440
+          - api: 35
+            target: google_apis
+            size: 1920x1200
+            density: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the signed starting version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_TAG: ${{ inputs.from_tag }}
+        run: |
+          gh release download "$SOURCE_TAG" --pattern '*.apk' --dir "$RUNNER_TEMP/reprise"
+          tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')
+          echo "EXPECTED_VERSION=${tag#v}" >> "$GITHUB_ENV"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: x86_64
+          profile: pixel_4
+          disable-animations: true
+          script: |
+            adb shell wm size ${{ matrix.size }}
+            adb shell wm density ${{ matrix.density }}
+            python3 checks/android_upgrade.py "$RUNNER_TEMP/reprise" "$EXPECTED_VERSION"
