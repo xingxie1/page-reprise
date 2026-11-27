@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       from_tag:
-        description: Release or draft containing the earlier signed APK
+        description: Earlier published release containing the signed APK
         required: true
         type: string
 permissions:
