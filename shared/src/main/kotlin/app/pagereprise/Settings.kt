@@ -51,20 +51,11 @@ internal fun Settings(model: StudyModel) {
             }
         }
         Sheet(Modifier.fillMaxWidth()) {
-            Heading("408 学科设置")
-            Row { Text("将四门分别作为可选科目", Modifier.weight(1f)); Switch(model.split, { model.toggleSplit() }) }
-            Text("不会复制或移动旧题。原 408 本有题时仍可打开，需本人逐题更正归属。", style = MaterialTheme.typography.bodySmall)
-        }
-        Sheet(Modifier.fillMaxWidth()) {
             Heading("整库备份", "包含正式题图、各科归属和作答历史；不含密码与本机草稿。")
             if (model.session == null) Text("试用备份绑定本次安装。换机请先迁入受邀账号，账号备份可跨设备恢复。")
             OutlinedButton(onClick = { exporter("循页-" + model.today + ".zip") }, enabled = !model.busy) { Text("导出备份包") }
             OutlinedButton(onClick = { importer() }, enabled = !model.busy) { Text("选择备份并预览") }
             Text("导出后可手动上传至夸克网盘；不要用公开分享链接发送含私有笔记的备份。", style = MaterialTheme.typography.bodySmall)
-        }
-        Sheet(Modifier.fillMaxWidth()) {
-            Heading("复习规则")
-            Text("尚未清零：1 → 7 → 14 天\n已经清零：1 → 3 → 14 天\n按北京时间自然日计算。猜中算错，第二次清零才升级。")
         }
     }
     model.preview?.let { preview ->

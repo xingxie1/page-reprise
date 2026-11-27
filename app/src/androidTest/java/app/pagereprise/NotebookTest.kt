@@ -35,7 +35,7 @@ class NotebookTest {
         screen.waitUntil(10000) { model.cards.any { it.body.title == title } }
         screen.activityRule.scenario.recreate()
         screen.onNodeWithTag("book:math:false").performClick()
-        screen.onNodeWithText(title).performClick()
+        screen.onNodeWithText(title, substring = true).performClick()
         screen.onNodeWithText("题目详情").assertIsDisplayed()
         val wide = when (InstrumentationRegistry.getArguments().getString("layout")) {
             "tablet" -> true
@@ -89,7 +89,7 @@ class NotebookTest {
             runBlocking { store.merge(model.owner, listOf(original), true) }
             screen.runOnIdle { model.foreground(); model.openBook("english", false) }
             screen.waitUntil(10000) { model.book.any { it.id == original.id } }
-            screen.onNodeWithText(title).performClick()
+            screen.onNodeWithText(title, substring = true).performClick()
             screen.onNodeWithText("删除错题").performScrollTo().performClick()
             screen.onNodeWithText("取消").performClick()
             assertTrue(model.book.any { it.id == original.id })
@@ -97,11 +97,11 @@ class NotebookTest {
             screen.onNodeWithText("移入回收站").performClick()
             screen.waitUntil(10000) { model.page == Page.BOOK && model.discarded.any { it.id == original.id } }
             screen.onNodeWithText("回收站").performClick()
-            screen.onNodeWithText(title).assertIsDisplayed()
+            screen.onNodeWithText(title, substring = true).assertIsDisplayed()
             screen.onNodeWithText("恢复到普通本").performClick()
             screen.waitUntil(10000) { model.book.any { it.id == original.id } }
             assertEquals(StudyDays.date(original.at).plusDays(1), model.book.single { it.id == original.id }.plan.due)
-            screen.onNodeWithText(title).assertDoesNotExist()
+            screen.onNodeWithText(title, substring = true).assertDoesNotExist()
         } finally { store.db.close() }
     }
 
@@ -175,8 +175,8 @@ class NotebookTest {
             runBlocking { store.merge(model.owner, listOf(original), true) }
             screen.runOnIdle { model.foreground(); model.openBook("math", false) }
             screen.waitUntil(10000) { model.book.any { it.id == original.id } }
-            screen.onNodeWithTag("book-list").performScrollToNode(hasText(title))
-            screen.onNodeWithText(title).performClick()
+            screen.onNodeWithTag("book-list").performScrollToNode(hasText(title, substring = true))
+            screen.onNodeWithText(title, substring = true).performClick()
             val label = "题干图，点按放大"
             screen.waitUntil(10000) { screen.onAllNodesWithContentDescription(label).fetchSemanticsNodes().isNotEmpty() }
             screen.onNodeWithContentDescription(label).performScrollTo().performClick()
@@ -186,6 +186,31 @@ class NotebookTest {
             assertTrue("Viewer height " + viewer.size.height + " / " + host.height, viewer.size.height >= host.height - 2)
             screen.onNodeWithContentDescription("关闭大图").performClick()
             screen.onNodeWithTag("photo-viewer").assertDoesNotExist()
+        } finally { store.db.close() }
+    }
+    @Test fun todayListsDueCardsAcrossSubjectsAndReturnsAfterOneReview() {
+        val model = screen.activity.model
+        val store = Store(screen.activity.application)
+        val morning = StudyDays.today().minusDays(3).atStartOfDay(StudyDays.zone).toInstant().toEpochMilli()
+        val first = Event.create("cs-os", Body(title = "分页"), morning)
+        val last = Event.create("english", Body(title = "主旨"), morning + 1)
+        try {
+            runBlocking { store.merge(model.owner, listOf(last, first), true) }
+            screen.runOnIdle { model.foreground() }
+            screen.waitUntil(10000) { model.cards.any { it.id == first.id } }
+            screen.onNodeWithTag("open-today").performClick()
+            assertEquals(listOf(first.id, last.id), model.dueCards.map { it.id }.filter { it == first.id || it == last.id })
+            screen.onNodeWithTag("today-list").performScrollToNode(hasTestTag("today-" + first.id))
+            screen.onNodeWithTag("today-" + first.id).performClick()
+            screen.onNodeWithText("独立做对了").performScrollTo().performClick()
+            screen.waitUntil(10000) { model.page == Page.TODAY && model.dueCards.none { it.id == first.id } }
+            assertTrue(model.dueCards.any { it.id == last.id })
+            screen.runOnIdle { model.newEditor() }
+            screen.onNodeWithText("操作系统", useUnmergedTree = true).performScrollTo().assertExists()
+            assertFalse("cs" in model.selectable)
+            screen.runOnIdle { model.settings() }
+            screen.onNodeWithText("408 学科设置").assertDoesNotExist()
+            screen.onNodeWithText("复习规则").assertDoesNotExist()
         } finally { store.db.close() }
     }
 }

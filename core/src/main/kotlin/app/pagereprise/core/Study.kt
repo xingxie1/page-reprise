@@ -60,10 +60,12 @@ data class Event(
     val base: String = "",
     val value: String = "",
     val refs: List<String> = emptyList(),
-    val body: Body? = null
+    val body: Body? = null,
+    val number: Int? = null
 ) {
     fun checked(): Event {
         require(UUID.fromString(id).toString() == id && UUID.fromString(card).toString() == card)
+        require(number == null || (number in 1..1000000000 && kind in setOf(Kind.CREATE, Kind.MOVE)))
         require(at in 946684800000L..7258118400000L)
         require(refs.size <= 512 && refs.all { UUID.fromString(it).toString() == it } && id !in refs)
         when (kind) {
@@ -103,8 +105,10 @@ data class Step(val round: String, val votes: List<Event>, val before: Plan, val
 data class Card(
     val id: String, val subject: String, val body: Body, val plan: Plan, val round: String,
     val votes: List<Event>, val moves: List<Event>, val edits: List<Event>, val history: List<Step>,
-    val scoreConflict: Boolean, val scoreVersion: String, val removals: List<Event>
+    val scoreConflict: Boolean, val scoreVersion: String, val removals: List<Event>,
+    val createdAt: Long, val number: Int
 ) {
+    val label get() = "#" + number.toString().padStart(3, '0') + body.title.takeIf { it.isNotBlank() }?.let { "  " + it }.orEmpty()
     val expiresAt get() = removals.minOfOrNull { it.at }?.plus(TRASH_LIFETIME)
     val trashed get() = removals.isNotEmpty()
     fun trash(at: Long = System.currentTimeMillis()): Event {
@@ -149,7 +153,26 @@ private fun voteKey(event: Event): String = if (event.kind == Kind.UNDO) "undo"
 private fun successor(base: String, event: Event) = digest((base + "|" + voteKey(event)).toByteArray())
 
 object Library {
-    fun project(events: Collection<Event>): List<Card> = events.groupBy { it.card }.values.mapNotNull(::card)
+    private val addedOrder = compareBy<Card> { it.createdAt }.thenBy { it.id }
+
+    fun project(events: Collection<Event>): List<Card> {
+        val cards = events.groupBy { it.card }.values.mapNotNull(::card)
+        return cards.groupBy { it.subject }.values.flatMap { subject ->
+            val ordered = subject.sortedWith(addedOrder)
+            val claimed = mutableSetOf<Int>()
+            val numbered = ordered.filter { it.number > 0 && claimed.add(it.number) }.associateBy { it.id }
+            var next = 1
+            ordered.map { card ->
+                numbered[card.id] ?: run {
+                    while (next in claimed) next++
+                    card.copy(number = next++)
+                }
+            }
+        }
+    }
+
+    fun due(cards: List<Card>, day: LocalDate) = cards.filter { it.due(day) }.sortedWith(addedOrder)
+
 
     fun card(input: List<Event>): Card? {
         if (input.any { it.kind == Kind.PURGE }) return null
@@ -194,7 +217,11 @@ object Library {
                 mark.id in restoration.refs && restoration.at >= mark.at && restoration.at < mark.at + TRASH_LIFETIME
             }
         }.sortedBy { it.id }
-        return Card(creation.card, subject, body, plan, round, active, moves, edits, history, conflict, scoreVersion, removals)
+        val number = if (subject == creation.value) creation.number else events.asSequence()
+            .filter { it.kind == Kind.MOVE && it.value == subject && it.number != null }
+            .minWithOrNull(compareBy<Event> { it.at }.thenBy { it.id })?.number
+        return Card(creation.card, subject, body, plan, round, active, moves, edits, history, conflict, scoreVersion,
+            removals, creation.at, number ?: 0)
     }
 
     fun book(cards: List<Card>, subject: String, focus: Boolean): List<Card> =

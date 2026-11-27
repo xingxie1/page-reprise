@@ -61,13 +61,14 @@ class DesktopNotebookTest {
         ui.onNodeWithText("仅存为本机草稿").performScrollTo().performClick()
         ui.waitUntil(10000) { model.page == Page.HOME && model.drafts.size == 1 }
         assertTrue(model.cards.isEmpty())
-        ui.onNodeWithText("继续录入  ·  积分草稿").performScrollTo().performClick()
+        ui.onNodeWithTag("home-list").performScrollToNode(hasText("继续录入  ·  积分草稿"))
+        ui.onNodeWithText("继续录入  ·  积分草稿").performClick()
         ui.onNodeWithTag("save-card").performScrollTo().performClick()
         ui.waitUntil(10000) { model.cards.size == 1 && model.page == Page.HOME }
         assertTrue(model.drafts.isEmpty())
         assertEquals(StudyDays.today().plusDays(1), model.cards.single().plan.due)
         ui.onNodeWithTag("book:math:false").performClick()
-        ui.onNodeWithText("积分草稿").performClick()
+        ui.onNodeWithText("#001  积分草稿").performClick()
         ui.waitUntil(10000) { ui.onAllNodesWithContentDescription("题干图，点按放大").fetchSemanticsNodes().isNotEmpty() }
         ui.onNodeWithContentDescription("题干图，点按放大").performScrollTo().performClick()
         ui.onNodeWithTag("photo-viewer").assertExists()
@@ -98,5 +99,19 @@ class DesktopNotebookTest {
         assertEquals(day.plusDays(1), card.plan.due)
         assertTrue(Library.book(model.cards, "math", true).isEmpty())
         assertTrue(Library.book(model.cards, "cs", false).isEmpty())
+    }
+    @Test fun todayOpensOneDueCardAndReturnsToTheSortedList() {
+        val at = StudyDays.today().minusDays(2).atStartOfDay(StudyDays.zone).toInstant().toEpochMilli()
+        val old = Event.create("cs-os", Body(title = "缺页"), at)
+        val next = Event.create("english", Body(title = "段意"), at + 10)
+        runBlocking { platform.store.merge(model.owner, listOf(next, old), true) }
+        ui.runOnIdle { model.foreground() }
+        ui.waitUntil(10000) { model.dueCards.size == 2 }
+        ui.onNodeWithTag("open-today").performClick()
+        assertEquals(listOf(old.id, next.id), model.dueCards.map { it.id })
+        ui.onNodeWithTag("today-" + old.id).performClick()
+        ui.onNodeWithText("独立做对了").performScrollTo().performClick()
+        ui.waitUntil(10000) { model.page == Page.TODAY && model.dueCards.size == 1 }
+        ui.onNodeWithTag("today-" + next.id).assertExists()
     }
 }

@@ -31,6 +31,7 @@ private val colors = lightColorScheme(primary = Pine, onPrimary = Color.White, s
 @Composable
 fun RepriseApp(model: StudyModel) {
     MaterialTheme(colorScheme = colors) {
+        val todayList = key(model.owner) { rememberLazyListState() }
         val snacks = remember { SnackbarHostState() }
         var leave by remember { mutableStateOf(false) }
         val navigateBack: () -> Unit = {
@@ -50,6 +51,7 @@ fun RepriseApp(model: StudyModel) {
                         Spacer(Modifier.weight(1f))
                         Text(if (model.page == Page.HOME) "PAGE REPRISE" else when(model.page) {
                             Page.EDITOR -> "录题工作台"; Page.SETTINGS -> "账号与数据"; Page.ISSUES -> "待核对"
+                            Page.TODAY -> "今日复习"
                             Page.TRASH -> Subjects.name(model.subject) + " · 回收站"
                             else -> Subjects.name(model.subject) + if (model.focus) " · 永久重点本" else " · 普通错题本"
                         }, style = MaterialTheme.typography.labelMedium, color = Pine)
@@ -59,6 +61,7 @@ fun RepriseApp(model: StudyModel) {
                     Box(Modifier.fillMaxWidth().weight(1f)) {
                         when (model.page) {
                             Page.HOME -> Home(model)
+                            Page.TODAY -> TodayScreen(model, todayList)
                             Page.BOOK -> Book(model)
                             Page.REVIEW -> Review(model)
                             Page.DETAIL -> {
@@ -98,20 +101,23 @@ internal fun Sheet(modifier: Modifier = Modifier, content: @Composable ColumnSco
 
 @Composable
 private fun Home(model: StudyModel) {
-    val due = model.cards.filter { it.due(model.today) }
-    val unknown = !model.ready || (model.session != null && model.lastSync == 0L && model.cards.isEmpty())
+    val due = model.dueCards
+    val unknown = model.waitingForLibrary
     val next = model.cards.mapNotNull { it.plan.due }.filter { it.isAfter(model.today) }.minOrNull()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val columns = if (maxWidth >= 640.dp) 2 else 1
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize().testTag("home-list"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Surface(color = Pine, contentColor = Color.White, shape = RoundedCornerShape(22.dp)) {
+                Surface(onClick = model::openToday, modifier = Modifier.testTag("open-today"), color = Pine, contentColor = Color.White, shape = RoundedCornerShape(22.dp)) {
                     Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(model.today.format(DateTimeFormatter.ofPattern("MM月dd日 · EEEE", Locale.CHINA)), color = Color(0xFFC8DDCE), style = MaterialTheme.typography.labelLarge)
-                        Text("今日复习", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("今日复习", Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                            Text("查看全部 ›", style = MaterialTheme.typography.labelLarge)
+                        }
                         Text(if (unknown) "正在等待题库数据" else due.size.toString() + " 题待复习", fontSize = 28.sp)
                         Text(if (unknown) (model.syncText.ifBlank { "首次同步完成前不统计待办。" })
-                            else if (due.isNotEmpty()) "其中逾期 " + due.count { it.plan.due!!.isBefore(model.today) } + " 题 · 选一本开始"
+                            else if (due.isNotEmpty()) "其中逾期 " + due.count { it.plan.due!!.isBefore(model.today) } + " 题"
                             else next?.let { "今天已经清空，下次复习 " + it } ?: "从一道值得再做的题开始。", color = Color(0xFFDFEDE2))
                     }
                 }
@@ -150,6 +156,26 @@ private fun Home(model: StudyModel) {
 }
 
 @Composable
+private fun TodayScreen(model: StudyModel, list: LazyListState) {
+    val due = model.dueCards
+    LazyColumn(Modifier.fillMaxSize().testTag("today-list"), state = list,
+        contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Heading("今天要复习的题", if (model.waitingForLibrary) "正在等候题库数据" else "共 " + due.size + " 题 · 按录入时间从早到晚")
+        }
+        if (due.isEmpty() && !model.waitingForLibrary) item { Text("今天的复习已完成") }
+        items(due, key = { it.id }) { card ->
+            Sheet(Modifier.fillMaxWidth().testTag("today-" + card.id).clickable { model.reviewToday(card) }) {
+                Text(card.label, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                Text(Subjects.name(card.subject) + (if (card.plan.focus) " · 永久重点" else " · 普通") +
+                    " · " + card.plan.due + (if (card.plan.due!!.isBefore(model.today)) " 到期（逾期）" else " 到期"),
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
 private fun IssueBooks(model: StudyModel) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Heading("选择要核对的本", "两台设备的判分不同时，不会自动算作两轮。")
@@ -168,7 +194,7 @@ private fun Book(model: StudyModel) {
     var query by rememberSaveable(model.subject, model.focus) { mutableStateOf("") }
     var filter by rememberSaveable(model.subject, model.focus) { mutableStateOf("全部") }
     var peek by rememberSaveable(model.subject, model.focus) { mutableStateOf("") }
-    val items = book.filter { (query.isBlank() || (it.body.title + " " + it.body.source + " " + it.body.tags.joinToString(" ")).contains(query, true)) && when(filter) {
+    val items = book.filter { (query.isBlank() || (it.label + " " + it.body.source + " " + it.body.tags.joinToString(" ")).contains(query, true)) && when(filter) {
         "已到期" -> it.due(model.today); "已掌握" -> it.plan.due == null; "待核对" -> it.conflict; else -> true
     } }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -191,7 +217,7 @@ private fun Book(model: StudyModel) {
                 if (items.isEmpty()) item { Sheet { Heading("这里还没有题", "可以调整筛选，或录入第一道题。") } }
                 items(items, key = { it.id }) { card ->
                     Sheet(Modifier.fillMaxWidth().clickable { if (wide) peek = card.id else model.detail(card) }) {
-                        Text(card.body.title.ifBlank { "图片题 · " + card.body.pictures.size + " 张" }, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                        Text(card.label, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                         Text(status(card), style = MaterialTheme.typography.bodySmall, color = if (card.conflict) Amber else Pine)
                     }
                 }

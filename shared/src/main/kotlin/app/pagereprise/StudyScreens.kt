@@ -45,7 +45,7 @@ internal fun EditorScreen(model: StudyModel) {
         for (answers in listOf(false, true)) {
             val images = if (answers) editor.body.answers else editor.body.pictures
             Sheet(Modifier.fillMaxWidth()) {
-                Text(if (answers) "答案图 · 复习时折叠" else "题干图 · 按顺序展示",
+                Text(if (answers) "答案图" else "题干图",
                     modifier = if (answers) Modifier.bringIntoViewRequester(answerHeading) else Modifier, fontWeight = FontWeight.Bold)
                 images.forEachIndexed { index, hash ->
                     Photo(model, hash, "第 " + (index + 1) + " 张")
@@ -94,7 +94,7 @@ internal fun EditorScreen(model: StudyModel) {
 private fun Question(model: StudyModel, card: Card, reveal: Boolean, toggle: () -> Unit) {
     Sheet(Modifier.fillMaxWidth()) {
         Text("题干", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        if (card.body.title.isNotBlank()) Text(card.body.title, style = MaterialTheme.typography.titleMedium)
+        Text(card.label, style = MaterialTheme.typography.titleMedium)
         card.body.pictures.forEach { Photo(model, it, "题干图，点按放大") }
         if (card.body.source.isNotEmpty()) Text(card.body.source, style = MaterialTheme.typography.bodySmall)
     }
@@ -217,7 +217,7 @@ internal fun TrashScreen(model: StudyModel) {
         if (cards.isEmpty()) item { Text("回收站是空的") }
         items(cards, key = { it.id }) { card ->
             Sheet(Modifier.fillMaxWidth()) {
-                Text(card.body.title.ifBlank { "图片题" }, fontWeight = FontWeight.Medium)
+                Text(card.label, fontWeight = FontWeight.Medium)
                 card.body.pictures.firstOrNull()?.let { Photo(model, it, "待恢复的题干图") }
                 Text(format.format(Instant.ofEpochMilli(requireNotNull(card.expiresAt))) + " 到期", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick = { model.restoreCard(card) }, enabled = !model.busy) { Text("恢复到普通本") }

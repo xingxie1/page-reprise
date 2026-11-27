@@ -6,7 +6,7 @@ import kotlinx.coroutines.*
 import java.io.File
 import java.time.LocalDate
 
-enum class Page { HOME, BOOK, REVIEW, DETAIL, EDITOR, SETTINGS, ISSUES, TRASH }
+enum class Page { HOME, TODAY, BOOK, REVIEW, DETAIL, EDITOR, SETTINGS, ISSUES, TRASH }
 data class Turn(val card: String, val round: String)
 data class AnswerShare(val editorId: String, val serial: Int)
 data class ViewedPhoto(val hash: String, val label: String)
@@ -49,7 +49,6 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     var editor: Editor
         get() = currentEditor
         private set(value) { currentEditor = value; MediaFiles.protect(owner, value.body) }
-    var split by mutableStateOf(prefs.getBoolean("split:" + owner, false)); private set
     var preview by mutableStateOf<Staged?>(null); private set
     var mediaRevision by mutableIntStateOf(0); private set
     var answerShare by mutableStateOf<AnswerShare?>(null); private set
@@ -61,9 +60,11 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     private var refreshNumber = 0
     private var again = false
     private val shares = ArrayDeque<Pair<String, List<InputFile>>>()
-    val subjects get() = (Subjects.main.keys.filterNot { it == "cs" && split && (cards + discarded).none { card -> card.subject == "cs" } } +
-        Subjects.parts.keys.filter { key -> split || (cards + discarded).any { it.subject == key } }).distinct()
-    val selectable get() = if (split) Subjects.main.keys.filterNot { it == "cs" } + Subjects.parts.keys else subjects
+    val selectable = Subjects.main.keys.filterNot { it == "cs" } + Subjects.parts.keys
+    val subjects get() = if ((cards + discarded).any { it.subject == "cs" }) Subjects.all.keys.toList() else selectable
+    val dueCards by derivedStateOf { Library.due(cards, today) }
+    val waitingForLibrary get() = !ready || (session != null && lastSync == 0L && cards.isEmpty())
+    private var reviewOrigin = Page.BOOK
     val book get() = Library.book(cards, subject, focus)
 
     private var expiryJob: Job? = null
@@ -162,7 +163,7 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     }
 
     private suspend fun updated() { reload(); sync() }
-    fun toggleSplit() { split = !split; prefs.putBoolean("split:" + owner, split) }
+    fun openToday() { page = Page.TODAY }
     fun openBook(key: String, important: Boolean) { subject = key; focus = important; page = Page.BOOK }
     fun settings() { page = Page.SETTINGS }
     fun issues() { page = Page.ISSUES }
@@ -171,21 +172,33 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     fun back() {
         if (busy) return
         page = when(page) {
-            Page.REVIEW, Page.DETAIL, Page.TRASH -> Page.BOOK
+            Page.REVIEW -> reviewOrigin
+            Page.DETAIL, Page.TRASH -> Page.BOOK
             Page.EDITOR -> editor.back
             else -> Page.HOME
         }
     }
+    fun reviewToday(card: Card) {
+        if (dueCards.none { it.id == card.id && it.round == card.round }) return
+        subject = card.subject
+        focus = card.plan.focus
+        start(false, listOf(card))
+    }
+
     fun start(practice: Boolean, items: List<Card> = book) {
         val scoped = items.filter { it.subject == subject && it.plan.focus == focus && !it.conflict && (practice || it.due(today)) }
         if (scoped.isEmpty()) { message = "这本没有可复习的题"; return }
+        reviewOrigin = if (page == Page.TODAY) Page.TODAY else Page.BOOK
         manual = practice
         queue = scoped.map { Turn(it.id, it.round) }
         page = Page.REVIEW
     }
     fun next() {
         queue = queue.drop(1)
-        if (queue.isEmpty()) { page = Page.HOME; message = "本次复习已结束，没有切换到其他题本" }
+        if (queue.isEmpty()) {
+            page = if (reviewOrigin == Page.TODAY) Page.TODAY else Page.HOME
+            if (page == Page.HOME) message = "本次复习已结束，没有切换到其他题本"
+        }
     }
 
     fun grade(card: Card, right: Boolean, approved: Boolean) = perform {
@@ -203,7 +216,7 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     }
 
     fun newEditor(key: String = "") {
-        editor = Editor(subject = key, back = if (page == Page.BOOK) Page.BOOK else Page.HOME)
+        editor = Editor(subject = key.takeIf { it in selectable }.orEmpty(), back = if (page == Page.BOOK) Page.BOOK else Page.HOME)
         page = Page.EDITOR
     }
     fun editCard(card: Card) {
@@ -211,13 +224,13 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         page = Page.EDITOR
     }
     fun draft(record: Draft) {
-        editor = Editor(draft = record.draftId, subject = record.subject, body = Codec.json.fromJson(record.bodyJson, Body::class.java))
+        editor = Editor(draft = record.draftId, subject = record.subject.takeIf { it in selectable }.orEmpty(), body = Codec.json.fromJson(record.bodyJson, Body::class.java))
         page = Page.EDITOR
     }
     fun resumeEditor(snapshot: String, account: String?) {
         if (owner != account || page != Page.HOME) return
         val saved = Codec.json.fromJson(snapshot, Editor::class.java)
-        editor = saved
+        editor = if (saved.card == null && saved.subject !in selectable) saved.copy(subject = "") else saved
         selected = saved.card.orEmpty()
         if (saved.subject in Subjects.all) subject = saved.subject
         page = Page.EDITOR
@@ -276,12 +289,12 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     }
     fun saveCard() = perform {
         val current = editor
-        require(current.subject in Subjects.all) { "请先选择科目" }
+        require(if (current.card == null) current.subject in selectable else current.subject in Subjects.all) { "请先选择科目" }
         current.body.checked()
         val existing = current.card
         if (existing == null) {
-            val event = Event.create(current.subject, current.body)
             store.transaction {
+                val event = Event.create(current.subject, current.body).copy(number = store.nextNumber(owner, current.subject))
                 store.merge(owner, listOf(event), true)
                 store.dao.discard(owner, current.draft)
             }
@@ -294,7 +307,7 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     }
 
     fun move(card: Card, target: String) = perform {
-        store.act(owner, card.id) { fresh -> fresh.move(target).copy(refs = card.moves.map { it.id }) }
+        store.act(owner, card.id) { fresh -> fresh.move(target).copy(refs = card.moves.map { it.id }, number = store.nextNumber(owner, target)) }
         updated(); detail(cards.first { it.id == card.id }); message = "科目已更新，历史与排期保留"
     }
     fun undo(card: Card) = perform {
@@ -304,7 +317,7 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     fun resolve(card: Card, chosen: Event) = perform {
         store.act(owner, card.id) { fresh ->
             when(chosen.kind) {
-                Kind.MOVE -> { require(chosen in fresh.moves && fresh.moves == card.moves) { "选项已更新，请重新核对" }; fresh.move(chosen.value) }
+                Kind.MOVE -> { require(chosen in fresh.moves && fresh.moves == card.moves) { "选项已更新，请重新核对" }; fresh.move(chosen.value).copy(number = store.nextNumber(owner, chosen.value)) }
                 Kind.EDIT -> { require(chosen in fresh.edits && fresh.edits == card.edits) { "选项已更新，请重新核对" }; fresh.edit(requireNotNull(chosen.body)) }
                 else -> { require(fresh.votes == card.votes) { "作答已更新，请重新核对" }; fresh.chooseVote(chosen) }
             }
@@ -318,7 +331,6 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         vault.write(auth)
         session = auth; ready = false; cards = emptyList(); discarded = emptyList(); drafts = emptyList(); pending = 0
         editor = Editor(); queue = emptyList(); selected = ""; restoreCancel()
-        split = prefs.getBoolean("split:" + owner, false)
         syncText = ""; page = Page.HOME
         reload(); sync()
     }

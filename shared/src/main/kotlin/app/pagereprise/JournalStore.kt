@@ -87,7 +87,14 @@ abstract class JournalStore(private val mediaFor: (String) -> MediaFiles) {
         }
     }
 
-    suspend fun act(owner: String, card: String, allowTrashed: Boolean = false, make: (Card) -> Event): Event = transaction {
+    suspend fun nextNumber(owner: String, subject: String): Int {
+        val history = dao.entries(owner).map { Codec.decode(it.payload) }
+        val allocated = history.filter { it.value == subject && it.number != null }.maxOfOrNull { it.number!! } ?: 0
+        val visible = Library.project(history).filter { it.subject == subject }.maxOfOrNull { it.number } ?: 0
+        return maxOf(allocated, visible) + 1
+    }
+
+    suspend fun act(owner: String, card: String, allowTrashed: Boolean = false, make: suspend (Card) -> Event): Event = transaction {
         val state = Library.card(dao.item(owner, card).map { Codec.decode(it.payload) }) ?: error("找不到这道题")
         require(allowTrashed || !state.trashed) { "这道题已移入回收站" }
         val event = make(state).checked()
