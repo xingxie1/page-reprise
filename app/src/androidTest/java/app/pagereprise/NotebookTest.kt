@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.pagereprise.core.*
@@ -67,12 +68,28 @@ class NotebookTest {
         screen.waitUntil(15000) { !model.busy && model.cards.any { it.body == body } }
         screen.runOnIdle { model.detail(model.cards.first { it.body == body }) }
         screen.onNodeWithText("题 · 分式运算", substring = true).assertExists()
-        val wide = screen.activity.resources.configuration.screenWidthDp >= 700
-        screen.onNodeWithTag(if (wide) "read-mode-BOTH" else "read-mode-TEXT").assertIsSelected()
+        val first = screen.onNodeWithTag("read-mode-TEXT").assertTextEquals("题目").assertIsSelected()
+        val original = screen.onNodeWithTag("read-mode-IMAGE").assertTextEquals("原图")
+        val compare = screen.onNodeWithTag("read-mode-BOTH").assertTextEquals("对照")
+        assertTrue(first.getUnclippedBoundsInRoot().right <= original.getUnclippedBoundsInRoot().left)
+        assertTrue(original.getUnclippedBoundsInRoot().right <= compare.getUnclippedBoundsInRoot().left)
         screen.waitUntil(10000) { screen.onAllNodesWithContentDescription(formula).fetchSemanticsNodes().isNotEmpty() }
-        screen.onNodeWithText(question).assertExists()
+        val text = screen.onNodeWithText(question).assertExists()
+        val image = screen.onNodeWithText("图片载入中或尚未缓存，可在联网后同步。")
+        image.assertDoesNotExist()
+        original.performClick().assertIsSelected()
+        image.assertExists()
+        text.assertDoesNotExist()
+        compare.performClick().assertIsSelected()
+        val reveal = screen.onNodeWithText("核对答案与错因")
+        screen.waitUntil(10000) { screen.onAllNodesWithContentDescription(formula).fetchSemanticsNodes().isNotEmpty() }
+        val imageBounds = image.getUnclippedBoundsInRoot()
+        val textBounds = text.getUnclippedBoundsInRoot()
+        val contentBounds = reveal.getUnclippedBoundsInRoot()
+        if (contentBounds.right - contentBounds.left >= 700.dp) assertTrue(imageBounds.right <= textBounds.left)
+        else assertTrue(imageBounds.bottom <= textBounds.top)
         screen.onNodeWithText(answer).assertDoesNotExist()
-        screen.onNodeWithText("核对答案与错因").performScrollTo().performClick()
+        reveal.performScrollTo().performClick()
         screen.onNodeWithText(answer).assertExists()
         screen.onNodeWithText("收起答案与错因").performScrollTo().performClick()
         screen.onNodeWithText(answer).assertDoesNotExist()

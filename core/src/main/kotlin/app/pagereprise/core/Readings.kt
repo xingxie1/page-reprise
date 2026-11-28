@@ -41,8 +41,8 @@ fun Body.withReading(answer: Boolean, hash: String, markdown: String): Body {
 
 internal fun Body.checkReadings() {
     readings?.let { docs ->
-        require(docs.questions.keys.all(pictures::contains) && docs.answers.keys.all(answers::contains)) { "阅读稿缺少对应原图" }
-        require((docs.questions.values + docs.answers.values).all { it.isNotBlank() && it.length <= 24000 }) { "单页阅读稿太长，请分图或精简文字" }
+        require(docs.questions.keys.all(pictures::contains) && docs.answers.keys.all(answers::contains)) { "识别文字缺少对应原图" }
+        require((docs.questions.values + docs.answers.values).all { it.isNotBlank() && it.length <= 24000 }) { "单张图的文字太长，请分图或精简文字" }
     }
     knowledge?.let { point ->
         val notes = point.suggestions

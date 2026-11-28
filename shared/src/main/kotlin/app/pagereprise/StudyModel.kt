@@ -426,7 +426,7 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
             store.act(owner, existing) { fresh -> fresh.edit(current.body).copy(refs = current.parents) }
             message = "题目已保存，排期不变"
         }
-        if (readingErrors.isNotEmpty()) message = "原图已保存，未完成的阅读稿可在编辑题目时重试"
+        if (readingErrors.isNotEmpty()) message = "原图已保存，可在「编辑题目」中重新识别文字"
         updated(); page = current.back
     }
 
@@ -497,7 +497,7 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     }
     fun exportReading(card: Card, destination: OutputFile) = perform {
         withContext(Dispatchers.IO) { destination.write { it.write(card.markdown().toByteArray(Charsets.UTF_8)) } }
-        message = "已导出 Markdown 阅读稿"
+        message = "已将题目导出为 Markdown"
     }
     fun stage(source: InputFile) = perform {
         restoreCancel()

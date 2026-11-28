@@ -71,14 +71,14 @@ class DeepSeekReader internal constructor(private val http: OkHttpClient = OkHtt
                             } }
                             val choice = runCatching { JsonParser.parseString(it.body?.string()).asJsonObject
                                 .getAsJsonArray("choices").first().asJsonObject }.getOrNull()
-                            check(choice?.get("finish_reason")?.asString == "stop") { "未收到完整阅读稿，请裁切图片或稍后重试" }
+                            check(choice?.get("finish_reason")?.asString == "stop") { "未收到完整识别结果，请裁切图片或稍后重试" }
                             val text = choice?.getAsJsonObject("message")?.get("content")?.takeIf { v -> v.isJsonPrimitive }?.asString.orEmpty().trim()
-                            check(text.isNotEmpty()) { "DeepSeek 返回了空阅读稿" }
+                            check(text.isNotEmpty()) { "DeepSeek 返回了空的识别结果" }
                             val record = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
                             checkNotNull(record) { "DeepSeek 返回的格式不完整，可重试" }
                             fun string(name: String) = record[name]?.takeIf { field -> field.isJsonPrimitive && field.asJsonPrimitive.isString }?.asString?.trim()
                             val markdown = string("markdown").orEmpty()
-                            check(markdown.isNotBlank()) { "DeepSeek 未返回阅读稿，可重试" }
+                            check(markdown.isNotBlank()) { "DeepSeek 未返回识别文字，可重试" }
                             val topic = string("knowledge_point")?.takeIf { name -> name.isNotBlank() && validTopicText(name) &&
                                 name !in setOf("未知", "不确定", "无法判断", "待核对", "〔待核对〕", "null") }
                             result.resume(Transcription(markdown, topic))

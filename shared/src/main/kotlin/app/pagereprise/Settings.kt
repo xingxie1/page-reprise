@@ -68,7 +68,7 @@ internal fun Settings(model: StudyModel) {
         }
         ReadingKeySettings(model)
         Sheet(Modifier.fillMaxWidth()) {
-            Heading("整库备份", "包含正式题图、阅读稿、各科归属和作答历史。")
+            Heading("整库备份", "包含题图、识别文字、各科归属和作答历史。")
             if (model.session == null) Text("试用备份绑定本次安装。换机请先迁入受邀账号，账号备份可跨设备恢复。")
             OutlinedButton(onClick = { exporter("循页-" + model.today + ".zip") }, enabled = !model.busy) { Text("导出备份包") }
             OutlinedButton(onClick = { importer() }, enabled = !model.busy) { Text("选择备份并预览") }

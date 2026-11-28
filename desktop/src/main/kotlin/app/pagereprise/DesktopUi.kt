@@ -93,7 +93,7 @@ internal fun rememberImagePicker(receive: (List<InputFile>) -> Unit): () -> Unit
 internal fun rememberDocumentExporter(markdown: Boolean = false, receive: (OutputFile) -> Unit): (String) -> Unit {
     val parent = LocalDesktop.current?.window
     val extension = if (markdown) "md" else "zip"
-    val title = if (markdown) "导出阅读稿" else "导出整库备份"
+    val title = if (markdown) "导出题目" else "导出整库备份"
     return { name ->
         val chooser = JFileChooser().apply {
             dialogTitle = title

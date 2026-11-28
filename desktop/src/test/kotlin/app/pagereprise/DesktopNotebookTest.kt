@@ -52,7 +52,7 @@ class DesktopNotebookTest {
         ui.waitUntil(10000) { !model.busy }
     }
 
-    @Test fun readingDefaultsToSideBySideAndExportsAPortableCorrectedDocument() {
+    @Test fun questionTextOpensFirstAndCanBeComparedEditedAndExported() {
         ui.runOnIdle { model.newEditor("math") }
         paste(0x188090)
         paste(0x312451)
@@ -75,8 +75,24 @@ class DesktopNotebookTest {
         }
         row.performClick()
         ui.onNodeWithText("手填积分题干").assertExists()
-        ui.onNodeWithTag("read-mode-BOTH").assertIsSelected()
+        val question = ui.onNodeWithTag("read-mode-TEXT").assertTextEquals("题目").assertIsSelected()
+        val original = ui.onNodeWithTag("read-mode-IMAGE").assertTextEquals("原图")
+        val compare = ui.onNodeWithTag("read-mode-BOTH").assertTextEquals("对照")
+        assertTrue(question.fetchSemanticsNode().boundsInRoot.right <= original.fetchSemanticsNode().boundsInRoot.left)
+        assertTrue(original.fetchSemanticsNode().boundsInRoot.right <= compare.fetchSemanticsNode().boundsInRoot.left)
         ui.waitUntil(10000) { ui.onAllNodesWithContentDescription(formula).fetchSemanticsNodes().isNotEmpty() }
+        val photo = ui.onNodeWithContentDescription("题干图，点按放大")
+        photo.assertDoesNotExist()
+        original.performClick().assertIsSelected()
+        ui.onNodeWithText("计算下列积分").assertDoesNotExist()
+        ui.waitUntil(10000) { ui.onAllNodesWithContentDescription("题干图，点按放大").fetchSemanticsNodes().isNotEmpty() }
+        compare.performClick().assertIsSelected()
+        ui.waitUntil(10000) {
+            ui.onAllNodesWithContentDescription("题干图，点按放大").fetchSemanticsNodes().isNotEmpty() &&
+                ui.onAllNodesWithContentDescription(formula).fetchSemanticsNodes().isNotEmpty()
+        }
+        val text = ui.onNodeWithText("计算下列积分")
+        assertTrue(photo.getUnclippedBoundsInRoot().right <= text.getUnclippedBoundsInRoot().left)
         ui.onNodeWithText("只在展开后显示").assertDoesNotExist()
         ui.onNodeWithText("核对答案与错因").performScrollTo().performClick()
         ui.onNodeWithText("只在展开后显示").assertExists()
@@ -86,6 +102,8 @@ class DesktopNotebookTest {
         assertTrue(out.readText().contains(formula))
         assertTrue(out.readText().contains("#001 · 定积分"))
         assertTrue(out.readText().contains("只在展开后显示"))
+        ui.onNodeWithText("编辑题目").performScrollTo().performClick()
+        ui.runOnIdle { assertEquals(Page.EDITOR, model.page); assertEquals(model.cards.single().id, model.editor.card) }
     }
 
     @OptIn(ExperimentalTestApi::class)
@@ -231,6 +249,7 @@ class DesktopNotebookTest {
         assertEquals(StudyDays.today().plusDays(1), model.cards.single().plan.due)
         ui.onNodeWithTag("book:math:false").performClick()
         ui.onNodeWithText("#001  积分草稿").performClick()
+        ui.onNodeWithTag("read-mode-TEXT").assertDoesNotExist()
         ui.waitUntil(10000) { ui.onAllNodesWithContentDescription("题干图，点按放大").fetchSemanticsNodes().isNotEmpty() }
         ui.onNodeWithContentDescription("题干图，点按放大").performScrollTo().performClick()
         ui.onNodeWithTag("photo-viewer").assertExists()

@@ -175,7 +175,7 @@ internal fun Details(model: StudyModel, card: Card, widePreview: Boolean = false
         if (widePreview && card.body.readings != null) TextButton(onClick = { model.detail(card) }) { Text("展开阅读") }
         ReadingQuestion(model, card, reveal, widePreview) { reveal = !reveal }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(onClick = { model.detail(card); model.editCard(card) }, enabled = !card.conflict) { Text("编辑题目") }
+            TextButton(onClick = { model.detail(card); model.editCard(card) }, enabled = !card.conflict) { Text("编辑题目") }
             if (!card.conflict) TextButton(onClick = { export(Subjects.name(card.subject) + "-" + card.number + ".md") }) { Text("导出 Markdown") }
             TextButton(onClick = { moving = !moving }, enabled = !card.conflict) { Text("更正科目") }
             if (card.canUndo) TextButton(onClick = { undo = true }) { Text("撤销最近一轮") }
