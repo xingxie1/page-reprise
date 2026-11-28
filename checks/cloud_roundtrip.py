@@ -105,7 +105,8 @@ if __name__ == "__main__":
     event = {"id": identity, "card": identity, "kind": "CREATE", "at": 1800000000000, "base": "",
              "value": "math", "number": 7, "refs": [], "body": {"title": "math", "source": "", "solution": "",
              "pictures": [photo], "answers": [photo], "readings": {"questions": {photo: "求 $x^2$ 的导数"},
-             "answers": {photo: "原稿写作 $2x$"}}}}
+             "answers": {photo: "原稿写作 $2x$"}}, "knowledge": {"manual": "导数的计算",
+             "suggestions": {"questions": {photo: "幂函数求导"}, "answers": {photo: "导数运算"}}}}}
     row = {"owner": who, "event_id": identity, "card_id": identity, "payload": event}
     for device in (access, phone["access_token"]):
         ok(request("/rest/v1/study_events?on_conflict=owner,event_id", public, device, [row],

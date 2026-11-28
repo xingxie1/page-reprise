@@ -1,41 +1,69 @@
 package app.pagereprise.core
 
-/** A page belongs to one side of a question. Reordering images never changes their transcription. */
+/** Text keyed by the image hash and its role, used for both Markdown and short topic suggestions. */
 data class Readings(val questions: Map<String, String> = emptyMap(), val answers: Map<String, String> = emptyMap()) {
     fun side(answer: Boolean) = if (answer) answers else questions
+    fun attached(body: Body) = copy(questions = questions.filterKeys(body.pictures::contains), answers = answers.filterKeys(body.answers::contains))
+    fun withPage(answer: Boolean, hash: String, text: String): Readings {
+        val updated = if (text.isBlank()) side(answer) - hash else side(answer) + (hash to text)
+        return if (answer) copy(answers = updated) else copy(questions = updated)
+    }
 }
+
+const val TOPIC_LIMIT = 40
+data class KnowledgePoint(val manual: String? = null, val suggestions: Readings = Readings())
 
 fun Body.pages(answer: Boolean) = if (answer) answers else pictures
 fun Body.reading(answer: Boolean, hash: String) = readings?.side(answer)?.get(hash)
+val Body.suggestedTopic: String? get() = knowledge?.suggestions?.let { notes ->
+    pictures.firstNotNullOfOrNull(notes.questions::get) ?: answers.firstNotNullOfOrNull(notes.answers::get)
+}
+val Body.knowledgePoint get() = (knowledge?.manual ?: suggestedTopic).orEmpty().trim()
+fun validTopicText(text: String) = text.length <= TOPIC_LIMIT && text.none { it.isISOControl() || it == '\u2028' || it == '\u2029' }
 
-fun Body.keepAttachedReadings(): Body = readings?.let {
-    copy(readings = Readings(it.questions.filterKeys(pictures::contains), it.answers.filterKeys(answers::contains)))
-} ?: this
+fun Body.keepAttachedReadings() = copy(readings = readings?.attached(this),
+    knowledge = knowledge?.let { it.copy(suggestions = it.suggestions.attached(this)) })
+
+fun Body.withManualTopic(value: String?) = copy(knowledge = (knowledge ?: KnowledgePoint()).copy(manual = value))
+
+fun Body.withSuggestedTopic(answer: Boolean, hash: String, value: String?): Body {
+    val topic = value?.trim()?.takeIf { it.isNotEmpty() && validTopicText(it) } ?: return this
+    require(hash in pages(answer)) { "原图已移除" }
+    val point = knowledge ?: KnowledgePoint()
+    return copy(knowledge = point.copy(suggestions = point.suggestions.withPage(answer, hash, topic))).also { it.checkReadings() }
+}
 
 fun Body.withReading(answer: Boolean, hash: String, markdown: String): Body {
     require(hash in pages(answer)) { "原图已移除" }
     val documents = readings ?: Readings()
-    val text = markdown.trim()
-    val side = if (text.isEmpty()) documents.side(answer) - hash else documents.side(answer) + (hash to text)
-    return copy(readings = if (answer) documents.copy(answers = side) else documents.copy(questions = side))
-        .also { it.checkReadings() }
+    return copy(readings = documents.withPage(answer, hash, markdown.trim())).also { it.checkReadings() }
 }
 
 internal fun Body.checkReadings() {
-    val docs = readings ?: return
-    require(docs.questions.keys.all(pictures::contains) && docs.answers.keys.all(answers::contains)) { "阅读稿缺少对应原图" }
-    require((docs.questions.values + docs.answers.values).all { it.isNotBlank() && it.length <= 24000 }) { "单页阅读稿太长，请分图或精简文字" }
+    readings?.let { docs ->
+        require(docs.questions.keys.all(pictures::contains) && docs.answers.keys.all(answers::contains)) { "阅读稿缺少对应原图" }
+        require((docs.questions.values + docs.answers.values).all { it.isNotBlank() && it.length <= 24000 }) { "单页阅读稿太长，请分图或精简文字" }
+    }
+    knowledge?.let { point ->
+        val notes = point.suggestions
+        require(notes.questions.keys.all(pictures::contains) && notes.answers.keys.all(answers::contains)) { "知识点缺少对应原图" }
+        require(point.manual?.let(::validTopicText) != false &&
+            (notes.questions.values + notes.answers.values).all { it.isNotBlank() && validTopicText(it) }) { "知识点请填写 40 字以内的单行名称" }
+    }
     // Leave space for event metadata, conflict references and JSONB formatting in the cloud row.
-    if (docs.questions.isNotEmpty() || docs.answers.isNotEmpty())
+    if (knowledge != null || readings?.let { it.questions.isNotEmpty() || it.answers.isNotEmpty() } == true)
         require(Codec.json.toJson(this).toByteArray().size <= 150000) { "单题文字过长，请将长题拆开录入" }
 }
 
-/** Old clients write edits without the additive field. Follow only ancestry that kept this exact image on this side. */
-internal fun bodyWithReadings(chosen: Event, creation: Event, events: List<Event>): Body {
+/** Older clients omit newer fields. For per-image text, inherit only across edits that kept the same image and role. */
+internal fun bodyWithPageMetadata(chosen: Event, creation: Event, events: List<Event>): Body {
     val body = requireNotNull(chosen.body)
-    if (chosen == creation || body.readings != null || events.none { it.body?.readings != null }) return body
+    if (chosen == creation) return body
+    val inheritReading = body.readings == null && events.any { it.body?.readings != null }
+    val inheritTopic = body.knowledge == null && events.any { it.body?.knowledge != null }
+    if (!inheritReading && !inheritTopic) return body
     val byId = events.filter { it.kind == Kind.EDIT }.associateBy { it.id }
-    fun inherit(answer: Boolean, hash: String): String? {
+    fun inherit(stop: (Body) -> Boolean, value: (Body) -> String?): String? {
         val todo = ArrayDeque(listOf(chosen))
         val visited = mutableSetOf<String>()
         val versions = mutableSetOf<String?>()
@@ -43,19 +71,25 @@ internal fun bodyWithReadings(chosen: Event, creation: Event, events: List<Event
             val event = todo.removeFirst()
             if (!visited.add(event.id)) continue
             val parentBody = requireNotNull(event.body)
-            if (hash !in parentBody.pages(answer) || parentBody.readings != null || event == creation)
-                versions.add(parentBody.reading(answer, hash))
+            if (stop(parentBody) || event == creation) versions.add(value(parentBody))
             else if (event.refs.isEmpty()) todo.addLast(creation)
             else event.refs.mapNotNullTo(todo, byId::get)
         }
         return versions.singleOrNull()
     }
-    fun side(answer: Boolean) = body.pages(answer).mapNotNull { hash -> inherit(answer, hash)?.let { hash to it } }.toMap()
-    return body.copy(readings = Readings(side(false), side(true)))
+    fun inheritedPages(field: (Body) -> Readings?): Readings {
+        fun side(answer: Boolean) = body.pages(answer).mapNotNull { hash ->
+            inherit({ hash !in it.pages(answer) || field(it) != null }, { field(it)?.side(answer)?.get(hash) })?.let { hash to it }
+        }.toMap()
+        return Readings(side(false), side(true))
+    }
+    return body.copy(readings = if (inheritReading) inheritedPages { it.readings } else body.readings,
+        knowledge = if (inheritTopic) KnowledgePoint(inherit({ it.knowledge != null }, { it.knowledge?.manual }),
+            inheritedPages { it.knowledge?.suggestions }) else body.knowledge)
 }
 
 fun Card.markdown(): String = buildString {
-    appendLine("# " + Subjects.name(subject) + " · " + label.substringBefore(' '))
+    appendLine("# " + Subjects.name(subject) + " · " + numberLabel + body.knowledgePoint.takeIf(String::isNotBlank)?.let { " · " + it }.orEmpty())
     for (answer in listOf(false, true)) {
         appendLine()
         appendLine(if (answer) "## 答案与错因" else "## 题干")

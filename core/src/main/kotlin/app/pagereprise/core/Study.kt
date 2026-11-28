@@ -38,7 +38,8 @@ data class Body(
     val pictures: List<String> = emptyList(),
     val answers: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
-    val readings: Readings? = null
+    val readings: Readings? = null,
+    val knowledge: KnowledgePoint? = null
 ) {
     fun checked(): Body {
         require(title.isNotBlank() || pictures.isNotEmpty()) { "请填写题干或添加题图" }
@@ -110,7 +111,10 @@ data class Card(
     val scoreConflict: Boolean, val scoreVersion: String, val removals: List<Event>,
     val createdAt: Long, val number: Int
 ) {
-    val label get() = "#" + number.toString().padStart(3, '0') + body.title.takeIf { it.isNotBlank() }?.let { "  " + it }.orEmpty()
+    private val digits get() = number.toString().padStart(3, '0')
+    val numberLabel get() = "#" + digits
+    val label get() = body.knowledgePoint.takeIf(String::isNotBlank)?.let { "第 " + digits + " 题 · " + it }
+        ?: (numberLabel + body.title.takeIf(String::isNotBlank)?.let { "  " + it }.orEmpty())
     val expiresAt get() = removals.minOfOrNull { it.at }?.plus(TRASH_LIFETIME)
     val trashed get() = removals.isNotEmpty()
     fun trash(at: Long = System.currentTimeMillis()): Event {
@@ -184,7 +188,7 @@ object Library {
         val edits = heads(events.filter { it.kind == Kind.EDIT })
         val subject = moves.map { it.value }.distinct().singleOrNull() ?: creation.value
         val chosen = edits.takeIf { versions -> versions.map { it.body }.distinct().size == 1 }?.firstOrNull() ?: creation
-        val body = bodyWithReadings(chosen, creation, events)
+        val body = bodyWithPageMetadata(chosen, creation, events)
         val rounds = events.filter { it.kind == Kind.REVIEW || it.kind == Kind.UNDO }.groupBy { it.base }
         var plan = Plan(0, 0, StudyDays.date(creation.at).plusDays(1))
         var round = "start"

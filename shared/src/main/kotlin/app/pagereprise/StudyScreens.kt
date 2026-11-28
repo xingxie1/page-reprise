@@ -43,6 +43,11 @@ internal fun EditorScreen(model: StudyModel) {
         }
         OutlinedTextField(editor.body.title, { model.change(model.editor.body.copy(title = it)) },
             Modifier.fillMaxWidth().testTag("question-text"), label = { Text("题干文字（有题图可留空）") }, minLines = 2)
+        OutlinedTextField(editor.body.knowledge?.manual ?: editor.body.suggestedTopic.orEmpty(), { value ->
+            if (validTopicText(value)) model.change(model.editor.body.withManualTopic(value))
+        }, Modifier.fillMaxWidth().testTag("knowledge-point"), singleLine = true, label = { Text("知识点（显示在题号后）") })
+        if (editor.body.knowledge?.manual != null && editor.body.suggestedTopic != null)
+            TextButton(onClick = { model.change(model.editor.body.withManualTopic(null)) }) { Text("采用识别的知识点") }
         for (answers in listOf(false, true)) {
             val images = if (answers) editor.body.answers else editor.body.pictures
             Sheet(Modifier.fillMaxWidth()) {
@@ -149,11 +154,12 @@ internal fun Details(model: StudyModel, card: Card, widePreview: Boolean = false
             options.forEach { option ->
                 val label = when(option.kind) {
                     Kind.MOVE -> "归入 " + Subjects.name(option.value)
-                    Kind.EDIT -> option.body?.title.orEmpty().ifBlank { "图片题面" } + " · " + option.body?.source.orEmpty()
+                    Kind.EDIT -> option.body?.let { it.knowledgePoint.ifBlank { it.title }.ifBlank { "图片题面" } + " · " + it.source }.orEmpty()
                     Kind.UNDO -> "撤销这一轮"
                     else -> if (option.value == "right") "独立做对" else "没做对（含猜对）"
                 }
                 if (option.kind == Kind.EDIT) {
+                    option.body?.takeIf { it.knowledgePoint.isNotBlank() && it.title.isNotBlank() }?.let { Text(it.title) }
                     Text(option.body?.solution.orEmpty(), style = MaterialTheme.typography.bodySmall)
                     (option.body?.pictures.orEmpty() + option.body?.answers.orEmpty()).forEach { Photo(model, it, "待核对版本") }
                     option.body?.let { body -> listOf(false, true).forEach { answer -> body.pages(answer).forEach { hash ->

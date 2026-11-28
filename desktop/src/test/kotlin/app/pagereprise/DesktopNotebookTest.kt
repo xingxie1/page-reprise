@@ -60,12 +60,21 @@ class DesktopNotebookTest {
         val a = model.editor.body.answers.single()
         val formula = """\int_0^1 x\,dx"""
         ui.runOnIdle {
+            model.change(model.editor.body.copy(title = "手填积分题干").withSuggestedTopic(false, q, "定积分"))
             assertTrue(model.correctReading(ReadingPage(false, q), "计算下列积分\n\n$$" + formula + "$$"))
             assertTrue(model.correctReading(ReadingPage(true, a), "只在展开后显示"))
             model.saveCard()
         }
         ui.waitUntil(10000) { !model.busy && model.cards.isNotEmpty() }
-        ui.runOnIdle { model.detail(model.cards.single()) }
+        ui.runOnIdle { model.openBook("math", false) }
+        val search = ui.onNodeWithTag("book-search")
+        val row = ui.onNodeWithText("第 001 题 · 定积分")
+        for (query in listOf("手填积分题干", "#001", "定积分")) {
+            search.performTextReplacement(query)
+            row.assertExists()
+        }
+        row.performClick()
+        ui.onNodeWithText("手填积分题干").assertExists()
         ui.onNodeWithTag("read-mode-BOTH").assertIsSelected()
         ui.waitUntil(10000) { ui.onAllNodesWithContentDescription(formula).fetchSemanticsNodes().isNotEmpty() }
         ui.onNodeWithText("只在展开后显示").assertDoesNotExist()
@@ -75,6 +84,7 @@ class DesktopNotebookTest {
         ui.runOnIdle { model.exportReading(model.cards.single(), OutputFile { content -> out.outputStream().use(content) }) }
         ui.waitUntil(10000) { !model.busy }
         assertTrue(out.readText().contains(formula))
+        assertTrue(out.readText().contains("#001 · 定积分"))
         assertTrue(out.readText().contains("只在展开后显示"))
     }
 
@@ -111,7 +121,7 @@ class DesktopNotebookTest {
         ui.runOnIdle { assertTrue(model.focus) }
     }
 
-    @Test fun filterCurlFollowsThePointerAndOnlyPaintsInsideTheResultList() {
+    @Test fun filterAndSlidingListFollowTheSameGestureWhileSearchAndPreviewStayStill() {
         val card = Event.create("math", Body(title = "明天复习的题", solution = "预览中的解法"))
         runBlocking { platform.store.merge(model.owner, listOf(card), true) }
         ui.runOnIdle { model.foreground(); model.openBook("math", false) }
@@ -119,17 +129,19 @@ class DesktopNotebookTest {
         ui.onNodeWithText("#001  明天复习的题").performClick()
         ui.onNodeWithText("核对答案与错因").performScrollTo().performClick()
         val list = ui.onNodeWithTag("book-list")
-        val pane = ui.onNodeWithTag("book-pages")
+        val search = ui.onNodeWithTag("book-search")
+        val filters = ui.onNodeWithTag("book-filters")
         val preview = ui.onNodeWithText("预览中的解法")
         fun pixels(node: SemanticsNodeInteraction): IntArray {
             val img = node.captureToImage()
             return IntArray(img.width * img.height).also { img.readPixels(it) }
         }
-        fun checkFold(forward: Boolean) {
-            val before = pixels(pane)
+        fun checkSlide(forward: Boolean) {
+            val before = pixels(search)
+            val chips = pixels(filters)
             val right = pixels(preview)
-            val frame = pane.captureToImage()
-            val split = (list.fetchSemanticsNode().boundsInRoot.top - pane.fetchSemanticsNode().boundsInRoot.top).toInt()
+            val startX = list.fetchSemanticsNode().positionInRoot.x
+            val listWidth = list.fetchSemanticsNode().size.width
             ui.mainClock.autoAdvance = false
             try {
                 list.performTouchInput {
@@ -139,21 +151,20 @@ class DesktopNotebookTest {
                     moveTo(Offset(width * end, height * .72f), delayMillis = 120)
                 }
                 ui.mainClock.advanceTimeBy(32)
-                val mid = pixels(pane)
-                assertArrayEquals("Header, search and filter buttons", before.copyOf(split * frame.width), mid.copyOf(split * frame.width))
+                ui.onNodeWithTag(if (forward) "filter:已到期" else "filter:全部").assertIsSelected()
+                assertArrayEquals("Search box", before, pixels(search))
+                assertFalse("The tab fill moves before release", chips.contentEquals(pixels(filters)))
                 assertArrayEquals("Wide preview", right, pixels(preview))
-                val y = frame.height - 12
-                val changed = (0 until frame.width).filter { mid[y * frame.width + it] != before[y * frame.width + it] }
-                assertTrue("The curved paper back must be visible before release", changed.size > 8)
-                assertTrue("Fold comes from the dragged edge", if (forward) changed.average() > frame.width / 2 else changed.average() < frame.width / 2)
+                val delta = list.fetchSemanticsNode().positionInRoot.x - startX
+                assertEquals("The page moves the same distance as the finger", listWidth * (if (forward) -.26f else .26f), delta, 2f)
                 list.performTouchInput { up() }
             } finally { ui.mainClock.autoAdvance = true }
             ui.waitForIdle()
         }
-        checkFold(true)
+        checkSlide(true)
         ui.onNodeWithTag("filter:已到期").assertIsSelected()
         preview.assertExists()
-        checkFold(false)
+        checkSlide(false)
         ui.onNodeWithTag("filter:全部").assertIsSelected()
         list.performTouchInput { swipe(Offset(width * .7f, height * .8f), Offset(width * .7f - 22f, height * .8f)) }
         ui.onNodeWithTag("filter:全部").assertIsSelected()

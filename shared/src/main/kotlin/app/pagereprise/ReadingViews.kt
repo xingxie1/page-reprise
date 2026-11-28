@@ -16,18 +16,21 @@ internal fun ReadingEditor(model: StudyModel, target: ReadingPage) {
     var editing by remember(model.editor.draft, target) { mutableStateOf(false) }
     var needsKey by remember(model.editor.draft, target) { mutableStateOf(false) }
     val error = model.readingError(target)
+    val topicOnly = saved != null
+    val canRequest = !topicOnly || (model.editor.body.knowledge?.manual == null && model.editor.body.suggestedTopic == null)
+    val action = if (topicOnly) "补识别知识点" else if (error == null) "识别这张图" else "重试识别"
     if (error != null) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     if (model.recognizing(target)) Text("正在识别…", color = MaterialTheme.colorScheme.primary)
     else if (saved != null) ReadingMarkdown(saved, model.readingSize)
     Row {
-        if (saved == null && !model.recognizing(target))
-            TextButton(onClick = { if (model.hasReadingKey) model.recognize(target) else needsKey = true },
-                enabled = !model.busy) { Text(if (error == null) "识别这张图" else "重试识别") }
+        if (canRequest && !model.recognizing(target))
+            TextButton(onClick = { if (model.hasReadingKey) model.recognize(target, topicOnly) else needsKey = true },
+                enabled = !model.busy) { Text(action) }
         TextButton(onClick = { editing = true }, enabled = !model.busy) { Text(if (saved != null) "校对阅读稿" else "手动誊写") }
     }
     if (needsKey) ReadingKeyDialog(model, action = "保存并识别此图", saved = {
         model.setAutomaticReading(false)
-        model.recognize(target)
+        model.recognize(target, topicOnly)
     }) { needsKey = false }
     if (editing) {
         var text by remember { mutableStateOf(saved.orEmpty()) }
@@ -74,7 +77,10 @@ private fun ReadingSide(model: StudyModel, card: Card, answer: Boolean, mode: Re
     val label = if (answer) "参考答案" else "题干图，点按放大"
     Sheet(Modifier.fillMaxWidth()) {
         Text(if (answer) "答案与错因" else "题干", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        if (!answer) Text(card.label, style = MaterialTheme.typography.titleMedium)
+        if (!answer) {
+            Text(card.label, style = MaterialTheme.typography.titleMedium)
+            if (body.knowledgePoint.isNotEmpty() && body.title.isNotBlank()) Text(body.title)
+        }
         else if (body.solution.isNotBlank()) Text(body.solution)
         if (mode == ReadingMode.BOTH && images.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("原图", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)

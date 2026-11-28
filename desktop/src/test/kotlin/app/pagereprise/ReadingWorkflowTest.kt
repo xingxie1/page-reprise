@@ -22,12 +22,14 @@ class ReadingWorkflowTest {
         val file = temp.newFile().apply { writeBytes(byteArrayOf(1, 2, 3)) }
         var status = 200
         var reason = "stop"
+        var result = """{"markdown":"阅读稿","knowledge_point":"数列极限"}"""
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
             assertEquals("https://api.deepseek.com/chat/completions", request.url.toString())
             assertEquals("Bearer fixture", request.header("Authorization"))
             val payload = JsonParser.parseString(Buffer().also { request.body!!.writeTo(it) }.readUtf8()).asJsonObject
             assertEquals("deepseek-flash", payload["model"].asString)
+            assertEquals("json_object", payload.getAsJsonObject("response_format")["type"].asString)
             val messages = payload.getAsJsonArray("messages")
             assertEquals(2, messages.size())
             assertTrue(messages[0].asJsonObject["content"].asString.contains("〔待核对〕"))
@@ -37,12 +39,18 @@ class ReadingWorkflowTest {
             val image = parts[1].asJsonObject.getAsJsonObject("image_url")
             assertEquals("data:image/jpeg;base64,AQID", image["url"].asString)
             assertEquals("original", image["detail"].asString)
-            val choices = listOf(mapOf("finish_reason" to reason, "message" to mapOf("content" to "阅读稿", "reasoning_content" to "discard")))
+            val choices = listOf(mapOf("finish_reason" to reason, "message" to mapOf("content" to result, "reasoning_content" to "discard")))
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(status).message("test")
                 .body(Codec.json.toJson(mapOf("choices" to choices)).toResponseBody()).build()
         }.build()
         fun read() = runBlocking { DeepSeekReader(client).transcribe("fixture", file, true, "math") }
-        assertEquals("阅读稿", read())
+        assertEquals(Transcription("阅读稿", "数列极限"), read())
+        for (point in listOf("null", "[]", "\"未知\"", "\"" + "过长".repeat(30) + "\"")) {
+            result = """{"markdown":"保留原文","knowledge_point":""" + point + "}"
+            assertEquals(Transcription("保留原文"), read())
+        }
+        result = """{"knowledge_point":"数列极限"}"""
+        assertThrows(IllegalStateException::class.java) { read() }
         reason = "length"
         assertTrue(assertThrows(IllegalStateException::class.java) { read() }.message!!.contains("完整"))
         status = 402
@@ -102,15 +110,15 @@ class ReadingWorkflowTest {
         val platform = StudyPlatform(temp.newFolder("record"))
         val other = StudyPlatform(temp.newFolder("read"))
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val first = CompletableDeferred<Unit>()
+        var gate = CompletableDeferred<Unit>()
         val roles = mutableListOf<Boolean>()
         val fakeKey = "local-test-" + newId()
         val reader = ImageTranscriber { key, image, answer, _ ->
             assertEquals(fakeKey, key)
             assertTrue(image.isFile)
             roles.add(answer)
-            first.await()
-            if (answer) "答案原文" else "题面原文"
+            gate.await()
+            if (answer) Transcription("答案原文", "极限运算") else Transcription("题面原文", "数列极限")
         }
         val bytes = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(60, 40, BufferedImage.TYPE_INT_RGB), "png", it) }.toByteArray()
         val image = InputFile(bytes::inputStream)
@@ -130,28 +138,42 @@ class ReadingWorkflowTest {
                 until { !model.busy && model.readingCount == 2 }
                 model.saveCard()
                 assertTrue(model.busy)
-                first.complete(Unit)
+                gate.complete(Unit)
                 until { !model.busy && model.cards.size == 1 }
                 val card = model.cards.single()
                 val hash = card.body.pictures.first()
                 assertEquals(listOf(false, true), roles)
                 assertEquals("题面原文", card.body.reading(false, hash))
                 assertEquals("答案原文", card.body.reading(true, hash))
+                assertEquals("第 001 题 · 数列极限", card.label)
                 val event = Codec.decode(platform.store.dao.entries(model.owner).single().payload)
                 assertFalse(Codec.encode(event).contains(fakeKey))
-                val older = event.copy(body = event.body!!.copy(readings = null))
+                val older = event.copy(body = event.body!!.copy(knowledge = null))
                 other.store.merge(model.owner, listOf(older), true)
                 other.store.merge(model.owner, listOf(event, older, event), false)
                 val cached = other.store.dao.entries(model.owner).single()
                 assertTrue(cached.pending)
                 assertEquals(event, Codec.decode(cached.payload))
+                assertEquals(card.label, Library.project(listOf(Codec.decode(cached.payload))).single().label)
                 assertNull(other.vault.readingKey(model.owner))
                 model.editCard(card)
                 assertEquals(0, model.readingCount)
                 assertTrue(model.correctReading(ReadingPage(false, hash), "人工校对"))
+                model.setAutomaticReading(false)
+                // Simulate an already transcribed 0.5.1 card and a manual title typed during a backfill.
+                model.change(model.editor.body.copy(knowledge = null))
+                gate = CompletableDeferred()
+                model.recognize(ReadingPage(false, hash), topicOnly = true)
+                until { roles.size == 3 }
+                model.change(model.editor.body.withManualTopic("夹逼准则"))
+                gate.complete(Unit)
                 model.saveCard()
                 until { !model.busy }
-                assertEquals("人工校对", model.cards.single().body.reading(false, hash))
+                val saved = model.cards.single()
+                assertEquals("人工校对", saved.body.reading(false, hash))
+                assertEquals("数列极限", saved.body.suggestedTopic)
+                assertEquals("第 001 题 · 夹逼准则", saved.label)
+                assertEquals(listOf(false, true, false), roles)
                 model.setReadingKey(null)
                 assertNull(platform.vault.readingKey(model.owner))
                 model.close()
@@ -166,7 +188,7 @@ class ReadingWorkflowTest {
         platform.vault.saveReadingKey(owner, "fixture-existing-key")
         val roles = mutableListOf<Boolean>()
         val wait = CompletableDeferred<Unit>()
-        val reader = ImageTranscriber { _, _, answer, _ -> roles.add(answer); wait.await(); "已识别" }
+        val reader = ImageTranscriber { _, _, answer, _ -> roles.add(answer); wait.await(); Transcription("已识别", "图的遍历") }
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         fun image(color: Int): InputFile {
             val bitmap = BufferedImage(40, 30, BufferedImage.TYPE_INT_RGB).apply { setRGB(12, 15, color) }

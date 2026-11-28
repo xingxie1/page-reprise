@@ -32,11 +32,14 @@ import kotlinx.coroutines.flow.collect
 private enum class BookFilter(val label: String) {
     ALL("全部"), DUE("已到期"), MASTERED("已掌握"), CONFLICT("待核对")
 }
+private val bookLabels = listOf("普通错题本", "重点错题本")
+private val filterLabels = BookFilter.entries.map { it.label }
 
 private data class NotebookPage(val focus: Boolean, val filter: BookFilter, val query: String,
                                 val book: List<Card>, val today: LocalDate) {
     val rows = book.filter { card ->
-        (query.isBlank() || (card.label + " " + card.body.source + " " + card.body.tags.joinToString(" ")).contains(query, true)) &&
+        (query.isBlank() || (card.label + " " + card.body.source + " " + card.body.tags.joinToString(" ")).contains(query, true) ||
+            card.numberLabel.contains(query, true) || card.body.title.contains(query, true)) &&
             when (filter) {
                 BookFilter.ALL -> true
                 BookFilter.DUE -> card.due(today)
@@ -60,12 +63,7 @@ private fun BookPanes(model: StudyModel, bookTurn: PageTurn, wide: Boolean) {
         NotebookPage(model.focus, filter, query, model.book, model.today)
     }
     Row(Modifier.fillMaxSize()) {
-        CurledPage(bookTurn, Modifier.weight(1f).fillMaxHeight().testTag("book-pages"), next = { index ->
-            val nextPage = remember(index, model.cards, model.subject, model.today) {
-                NotebookPage(index == 1, BookFilter.ALL, "", Library.book(model.cards, model.subject, index == 1), model.today)
-            }
-            NotebookFace(model, nextPage, bookTurn, {}, {}, {})
-        }) {
+        Box(Modifier.weight(1f).fillMaxHeight().testTag("book-pages")) {
             key(model.subject, page.focus) {
                 NotebookFace(model, page, bookTurn, { query = it }, { filter = it }) { card ->
                     if (wide) peek = card.id else model.detail(card)
@@ -88,6 +86,13 @@ private fun NotebookFace(model: StudyModel, page: NotebookPage, bookTurn: PageTu
                          onFilter: (BookFilter) -> Unit, onCard: (Card) -> Unit) {
     val filterTurn = rememberPageTurn { onFilter(BookFilter.entries[it]) }
     val bookIndex = if (page.focus) 1 else 0
+    val nextBook = bookTurn.target?.let { index ->
+        remember(index, model.cards, model.subject, model.today) {
+            NotebookPage(index == 1, BookFilter.ALL, "", Library.book(model.cards, model.subject, index == 1), model.today)
+        }
+    }
+    LaunchedEffect(nextBook?.focus) { if (nextBook != null) filterTurn.reset() }
+    val listTurn = if (nextBook == null) filterTurn else bookTurn
     val list = key(page.filter) { rememberLazyListState() }
     var hidden by rememberSaveable { mutableFloatStateOf(0f) }
     var headerHeight by remember { mutableIntStateOf(0) }
@@ -108,7 +113,7 @@ private fun NotebookFace(model: StudyModel, page: NotebookPage, bookTurn: PageTu
         }
     }
     Column(Modifier.fillMaxSize().nestedScroll(headerScroll)) {
-        // The header participates in vertical scrolling but lives outside the filter page and its curl.
+        // The header scrolls vertically and stays outside the horizontally sliding results.
         Column(Modifier.fillMaxWidth().clipToBounds().layout { measurable, constraints ->
             val header = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
             val offset = hidden.roundToInt().coerceIn(0, header.height)
@@ -120,38 +125,41 @@ private fun NotebookFace(model: StudyModel, page: NotebookPage, bookTurn: PageTu
             Column(Modifier.fillMaxWidth().onNotebookSwipe(bookTurn, bookIndex, 1)
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FlowRow(Modifier.fillMaxWidth().testTag("book-switcher"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (focus in listOf(false, true)) {
-                        FilterChip(page.focus == focus, { bookTurn.select(bookIndex, if (focus) 1 else 0) },
-                            { Text(if (focus) "重点错题本" else "普通错题本") }, modifier = Modifier.testTag("choose-book:" + focus))
-                    }
-                }
-                Text(Subjects.name(model.subject) + " · 共 " + page.book.size + " 题",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = { model.start(false) }, enabled = page.book.any { it.due(page.today) }) { Text("开始到期复习") }
-                    OutlinedButton(onClick = { model.start(true, page.rows) }, enabled = page.rows.any { !it.conflict }) { Text("手动抽练") }
-                    TextButton(onClick = { model.newEditor(model.subject) }) { Text("＋ 录题") }
-                    if (!page.focus) TextButton(onClick = model::openTrash) { Text("回收站") }
+                SlidingTabs(bookLabels, bookIndex, bookTurn, bookTurn.target, Modifier.fillMaxWidth().testTag("book-switcher"),
+                    tag = { "choose-book:" + (it == 1) }, onSelect = { bookTurn.select(bookIndex, it) })
+                SlidingPage(bookTurn, Modifier.fillMaxWidth(), next = { if (nextBook != null) BookActions(model, nextBook) }) {
+                    BookActions(model, page)
                 }
             }
             OutlinedTextField(page.query, onSearch, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("book-search"),
                 singleLine = true, label = { Text("只搜索这一本") })
         }
-        Column(Modifier.fillMaxWidth().weight(1f).onNotebookSwipe(filterTurn, page.filter.ordinal, BookFilter.entries.lastIndex)) {
-            FlowRow(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp).testTag("book-filters"),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                BookFilter.entries.forEach { filter ->
-                    FilterChip(page.filter == filter, { filterTurn.select(page.filter.ordinal, filter.ordinal) }, { Text(filter.label) },
-                        modifier = Modifier.testTag("filter:" + filter.label))
-                }
-            }
-            CurledPage(filterTurn, Modifier.fillMaxWidth().weight(1f).testTag("filter-pages"), next = { index ->
-                val nextPage = remember(page, index) { page.copy(filter = BookFilter.entries[index]) }
+        val filterSwipe = if (nextBook == null) Modifier.onNotebookSwipe(filterTurn, page.filter.ordinal, BookFilter.entries.lastIndex) else Modifier
+        Column(Modifier.fillMaxWidth().weight(1f).then(filterSwipe)) {
+            SlidingTabs(filterLabels, page.filter.ordinal, listTurn, if (nextBook == null) filterTurn.target else BookFilter.ALL.ordinal,
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp).testTag("book-filters"),
+                tag = { "filter:" + filterLabels[it] }, onSelect = { if (nextBook == null) filterTurn.select(page.filter.ordinal, it) })
+            SlidingPage(listTurn, Modifier.fillMaxWidth().weight(1f).testTag("filter-pages"), next = { index ->
+                val nextPage = remember(page, index, nextBook) { nextBook ?: page.copy(filter = BookFilter.entries[index]) }
                 ResultList(nextPage.rows, rememberLazyListState(), {})
             }) {
                 ResultList(page.rows, list, onCard)
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BookActions(model: StudyModel, page: NotebookPage) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(Subjects.name(model.subject) + " · 共 " + page.book.size + " 题",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(onClick = { model.start(false) }, enabled = page.book.any { it.due(page.today) }) { Text("开始到期复习") }
+            OutlinedButton(onClick = { model.start(true, page.rows) }, enabled = page.rows.any { !it.conflict }) { Text("手动抽练") }
+            TextButton(onClick = { model.newEditor(model.subject) }) { Text("＋ 录题") }
+            if (!page.focus) TextButton(onClick = model::openTrash) { Text("回收站") }
         }
     }
 }

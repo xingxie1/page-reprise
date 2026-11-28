@@ -53,7 +53,7 @@ class NotebookTest {
         val answer = "答案只在展开后出现"
         val formula = """\frac{1}{2}"""
         val body = Body(pictures = listOf(hash), answers = listOf(hash)).withReading(false, hash, question + "\n\n$$" + formula + "$$")
-            .withReading(true, hash, answer)
+            .withReading(true, hash, answer).withSuggestedTopic(false, hash, "分式运算")
         assertTrue(ReadingPrompts.system.contains("〔待核对〕"))
         assertNotNull(formulaImage("""\frac{1}{2}""", 24f, -1))
         val vault = Vault(screen.activity)
@@ -66,6 +66,7 @@ class NotebookTest {
         screen.runOnIdle { model.newEditor("math"); model.change(body); model.saveCard() }
         screen.waitUntil(15000) { !model.busy && model.cards.any { it.body == body } }
         screen.runOnIdle { model.detail(model.cards.first { it.body == body }) }
+        screen.onNodeWithText("题 · 分式运算", substring = true).assertExists()
         val wide = screen.activity.resources.configuration.screenWidthDp >= 700
         screen.onNodeWithTag(if (wide) "read-mode-BOTH" else "read-mode-TEXT").assertIsSelected()
         screen.waitUntil(10000) { screen.onAllNodesWithContentDescription(formula).fetchSemanticsNodes().isNotEmpty() }
@@ -89,6 +90,13 @@ class NotebookTest {
         val heading = screen.onNodeWithTag("book-switcher")
         heading.performTouchInput { swipeRight() }
         screen.runOnIdle { assertEquals("english", model.subject); assertFalse(model.focus) }
+        heading.performTouchInput {
+            down(Offset(width * .8f, height * .5f))
+            moveTo(Offset(width * .55f, height * .5f), delayMillis = 100)
+        }
+        screen.onNodeWithTag("choose-book:true").assertIsSelected()
+        heading.performTouchInput { cancel() }
+        screen.onNodeWithTag("choose-book:false").assertIsSelected()
         heading.performTouchInput { swipeLeft() }
         heading.performTouchInput { swipeLeft() }
         screen.runOnIdle { assertTrue(model.focus) }
@@ -103,6 +111,7 @@ class NotebookTest {
         }
         assertEquals(searchBounds, search.fetchSemanticsNode().boundsInRoot)
         assertEquals(filterBounds, filters.fetchSemanticsNode().boundsInRoot)
+        screen.onNodeWithTag("filter:已到期").assertIsSelected()
         list.performTouchInput { cancel() }
         screen.onNodeWithTag("filter:全部").assertIsSelected()
         fun switchBelow(left: Boolean) = list.performTouchInput {

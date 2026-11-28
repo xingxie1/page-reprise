@@ -309,10 +309,10 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     private fun imported(answer: Boolean, hashes: List<String>, ticket: Long? = readingTicket()) {
         if (ticket != null && ticket == readingTicket()) hashes.distinct().forEach { recognize(ReadingPage(answer, it)) }
     }
-    fun recognize(target: ReadingPage) {
+    fun recognize(target: ReadingPage, topicOnly: Boolean = false) {
         val (answer, hash) = target
         if (page != Page.EDITOR || !hasReadingKey || target in readingJobs || hash !in editor.body.pages(answer) ||
-            editor.body.reading(answer, hash) != null) return
+            (!topicOnly && editor.body.reading(answer, hash) != null)) return
         val draft = editor.draft
         val account = owner
         fun attached() = owner == account && page == Page.EDITOR && editor.draft == draft && hash in editor.body.pages(answer)
@@ -320,11 +320,17 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         val task = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 readingLane.withPermit {
-                    if (!attached() || editor.body.reading(answer, hash) != null) return@withPermit
+                    if (!attached() || (!topicOnly && editor.body.reading(answer, hash) != null)) return@withPermit
                     val key = runCatching { vault.readingKey(account) }.getOrNull() ?: error("请重新设置本机 Key")
                     val result = reader.transcribe(key, media.file(hash), answer, editor.subject)
                     ensureActive()
-                    if (attached() && editor.body.reading(answer, hash) == null) change(editor.body.withReading(answer, hash, result))
+                    if (attached()) {
+                        val current = editor.body
+                        val body = if (topicOnly || current.reading(answer, hash) != null) current
+                            else current.withReading(answer, hash, result.markdown)
+                        change(body.withSuggestedTopic(answer, hash, result.knowledgePoint))
+                        if (topicOnly && result.knowledgePoint == null) message = "这张图难以判断知识点，可以手动填写"
+                    }
                 }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { if (attached()) readingErrors[target] = e.message ?: "识别失败，可重试" }

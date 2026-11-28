@@ -52,9 +52,14 @@ abstract class JournalStore(private val mediaFor: (String) -> MediaFiles) {
                     if (old != event) {
                         val body = event.body
                         val previous = old.body
-                        require(body != null && previous != null && old.copy(body = previous.copy(readings = body.readings)) == event &&
-                            (body.readings == null || previous.readings == null)) { "同一操作标识内容不一致，已停止合并" }
-                        if (previous.readings == null) dao.updatePayload(owner, event.id, encoded)
+                        require(body != null && previous != null &&
+                            old.copy(body = previous.copy(readings = body.readings, knowledge = body.knowledge)) == event &&
+                            (body.readings == null || previous.readings == null || previous.readings == body.readings) &&
+                            (body.knowledge == null || previous.knowledge == null || previous.knowledge == body.knowledge)) {
+                            "同一操作标识内容不一致，已停止合并"
+                        }
+                        val complete = previous.copy(readings = previous.readings ?: body.readings, knowledge = previous.knowledge ?: body.knowledge)
+                        if (complete != previous) dao.updatePayload(owner, event.id, Codec.encode(old.copy(body = complete)))
                     }
                 }
             }

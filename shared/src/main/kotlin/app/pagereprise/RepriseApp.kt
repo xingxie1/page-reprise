@@ -50,11 +50,12 @@ fun RepriseApp(model: StudyModel, platformDialogs: @Composable () -> Unit = {}) 
                             Text("循页", fontWeight = FontWeight.Black, fontSize = 24.sp)
                         }
                         Spacer(Modifier.weight(1f))
+                        val shownFocus = if (model.page == Page.BOOK && bookTurn.showTarget) bookTurn.target == 1 else model.focus
                         Text(if (model.page == Page.HOME) "PAGE REPRISE" else when(model.page) {
                             Page.EDITOR -> "录题工作台"; Page.SETTINGS -> "账号与数据"; Page.ISSUES -> "待核对"
                             Page.TODAY -> "今日复习"
                             Page.TRASH -> Subjects.name(model.subject) + " · 回收站"
-                            else -> Subjects.name(model.subject) + if (model.focus) " · 永久重点本" else " · 普通错题本"
+                            else -> Subjects.name(model.subject) + if (shownFocus) " · 永久重点本" else " · 普通错题本"
                         }, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                         if (model.page == Page.HOME) TextButton(onClick = model::settings) { Text("设置") }
                     }
@@ -164,7 +165,7 @@ private fun Home(model: StudyModel) {
             if (model.drafts.isNotEmpty()) item { Heading("本机草稿", "未入本，不排期，不上传。") }
             items(model.drafts, key = { it.draftId }) { draft ->
                 val body = remember(draft.bodyJson) { Codec.json.fromJson(draft.bodyJson, Body::class.java) }
-                TextButton(onClick = { model.draft(draft) }) { Text("继续录入  ·  " + body.title.ifBlank { "图片草稿" }.take(40)) }
+                TextButton(onClick = { model.draft(draft) }) { Text("继续录入  ·  " + body.knowledgePoint.ifBlank { body.title }.ifBlank { "图片草稿" }.take(40)) }
             }
             item { Text(if (model.session == null) "本机试用 · 登录后可选择迁入自己的云端题库。" else model.syncText.ifBlank { "上次同步：" + model.lastSync.takeIf { it > 0 }?.let(StudyDays::date) },
                 style = MaterialTheme.typography.bodySmall) }

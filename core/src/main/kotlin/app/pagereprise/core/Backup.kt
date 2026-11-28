@@ -24,7 +24,11 @@ object Backup {
     private val imageName = Regex("images/([0-9a-f]{64})")
 
     fun write(output: OutputStream, owner: String, events: List<Event>, source: (String) -> InputStream) {
-        val version = if (events.any { it.body?.readings != null }) 3 else 2
+        val version = when {
+            events.any { it.body?.knowledge != null } -> 4
+            events.any { it.body?.readings != null } -> 3
+            else -> 2
+        }
         val manifest = Codec.json.toJson(BundleIndex(version, owner, System.currentTimeMillis(), events)).toByteArray()
         val images = events.images()
         require(manifest.size <= manifestLimit && images.size < 16000) { "备份超出当前大小限制" }
@@ -57,7 +61,7 @@ object Backup {
                         val buffer = java.io.ByteArrayOutputStream()
                         total += copyLimited(zip, buffer, manifestLimit)
                         val header = Codec.json.fromJson(buffer.toString("UTF-8"), BundleIndex::class.java)
-                        require(header.version in 1..3 && header.owner == owner) { "版本不兼容或不是当前账号的备份" }
+                        require(header.version in 1..4 && header.owner == owner) { "版本不兼容或不是当前账号的备份" }
                         require(header.events.size <= 150000)
                         header.events.forEach { it.checked() }
                         index = header
