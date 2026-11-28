@@ -13,6 +13,7 @@ data class Turn(val card: String, val round: String)
 data class AnswerShare(val editorId: String, val serial: Int)
 data class ViewedPhoto(val hash: String, val label: String)
 data class ReadingPage(val answer: Boolean, val hash: String)
+private data class SharedImages(val account: String, val files: List<InputFile>, val readingTicket: Long?)
 data class Editor(val draft: String = newId(), val card: String? = null, val subject: String = "",
     val body: Body = Body(), val parents: List<String> = emptyList(), val back: Page = Page.HOME)
 
@@ -29,6 +30,18 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     var session by mutableStateOf(runCatching { vault.read() }.getOrNull()); private set
     val owner get() = session?.owner ?: guest
     var hasReadingKey by mutableStateOf(runCatching { vault.readingKey(owner) != null }.getOrDefault(false)); private set
+    private val choicePreference get() = "auto-transcribe:" + owner
+    private fun savedReadingChoice() = prefs.getLong(choicePreference, if (hasReadingKey) 1L else 0L) != 0L
+    private var readingChoice by mutableStateOf(savedReadingChoice())
+    val automaticReading get() = hasReadingKey && readingChoice
+    private var readingRevision = 0L
+    private fun readingTicket() = readingRevision.takeIf { automaticReading }
+    fun setAutomaticReading(enabled: Boolean) {
+        prefs.putLong(choicePreference, if (enabled) 1L else 0L)
+        if (enabled != readingChoice) readingRevision++
+        readingChoice = enabled
+        if (!enabled) stopReading()
+    }
     var readingSize by mutableIntStateOf(prefs.getLong("reading-size", 17).toInt().coerceIn(15, 25)); private set
     fun resizeReading(step: Int) {
         readingSize = (readingSize + step).coerceIn(15, 25)
@@ -36,7 +49,6 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     }
     private val readingLane = Semaphore(1)
     private val readingJobs = mutableStateMapOf<ReadingPage, Job>()
-    private val importedPages = mutableSetOf<ReadingPage>()
     private val readingErrors = mutableStateMapOf<ReadingPage, String>()
     val readingCount get() = readingJobs.size
     fun readingError(page: ReadingPage) = readingErrors[page]
@@ -86,7 +98,7 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     val publishableKey get() = prefs.getString("service-public-key", "").orEmpty()
     private var refreshNumber = 0
     private var again = false
-    private val shares = ArrayDeque<Pair<String, List<InputFile>>>()
+    private val shares = ArrayDeque<SharedImages>()
     val selectable = Subjects.main.keys.filterNot { it == "cs" } + Subjects.parts.keys
     val subjects get() = if ((cards + discarded).any { it.subject == "cs" }) Subjects.all.keys.toList() else selectable
     val dueCards by derivedStateOf { Library.due(cards, today) }
@@ -267,7 +279,6 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         editor = editor.copy(body = body.keepAttachedReadings())
         fun detached(p: ReadingPage) = p.hash !in body.pages(p.answer)
         readingJobs.keys.toList().filter(::detached).forEach { readingJobs.remove(it)?.cancel() }
-        importedPages.removeAll(::detached)
         readingErrors.keys.toList().filter(::detached).forEach(readingErrors::remove)
     }
     fun stopReading() {
@@ -277,7 +288,6 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
     }
     private fun clearReadingTasks() {
         stopReading()
-        importedPages.clear()
         readingErrors.clear()
     }
     fun setReadingKey(input: String?): Boolean {
@@ -287,19 +297,17 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
             return false
         }
         try {
+            prefs.putLong(choicePreference, if (readingChoice) 1L else 0L)
             vault.saveReadingKey(owner, key)
         } catch (_: Exception) { message = "系统未能安全保存密钥，请重试"; return false }
         stopReading()
+        readingRevision++
         hasReadingKey = key != null
-        if (key != null && page == Page.EDITOR) importedPages.toList().forEach(::recognize)
-        message = if (key == null) "已清除此设备上当前账号的 Key" else "已在此设备启用图片识别"
+        message = if (key == null) "已清除此设备上当前账号的 Key" else "已保存本机 Key"
         return true
     }
-    private fun imported(answer: Boolean, hashes: List<String>) {
-        hashes.distinct().map { ReadingPage(answer, it) }.forEach {
-            importedPages.add(it)
-            if (hasReadingKey) recognize(it)
-        }
+    private fun imported(answer: Boolean, hashes: List<String>, ticket: Long? = readingTicket()) {
+        if (ticket != null && ticket == readingTicket()) hashes.distinct().forEach { recognize(ReadingPage(answer, it)) }
     }
     fun recognize(target: ReadingPage) {
         val (answer, hash) = target
@@ -330,14 +338,16 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
             val body = editor.body.withReading(target.answer, target.hash, value)
             readingJobs.remove(target)?.cancel()
             readingErrors.remove(target)
-            importedPages.remove(target)
             change(body)
             true
         } catch (e: IllegalArgumentException) { message = e.message; false }
     }
     fun selectSubject(key: String) { editor = editor.copy(subject = key) }
-    fun importImages(uris: List<InputFile>, answers: Boolean) = perform { appendImages(uris, answers) }
-    private suspend fun appendImages(uris: List<InputFile>, answers: Boolean) {
+    fun importImages(uris: List<InputFile>, answers: Boolean) {
+        val ticket = readingTicket()
+        perform { appendImages(uris, answers, ticket) }
+    }
+    private suspend fun appendImages(uris: List<InputFile>, answers: Boolean, ticket: Long?) {
         if (uris.isEmpty()) return
         val files = media
         val count = if (answers) editor.body.answers.size else editor.body.pictures.size
@@ -345,23 +355,23 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         val hashes = withContext(Dispatchers.IO) { uris.map(files::import) }
         val body = editor.body
         change(if (answers) body.copy(answers = body.answers + hashes) else body.copy(pictures = body.pictures + hashes))
-        imported(answers, hashes)
+        imported(answers, hashes, ticket)
     }
     fun shared(uris: List<InputFile>) {
         if (uris.isNotEmpty()) {
-            shares.addLast(owner to uris)
+            shares.addLast(SharedImages(owner, uris, readingTicket()))
             receiveNextShare()
         }
     }
     private fun receiveNextShare() {
         if (busy || shares.isEmpty()) return
-        val (account, photos) = shares.removeFirst()
+        val (account, photos, ticket) = shares.removeFirst()
         perform {
             if (account != owner) return@perform
             closePhoto()
             if (page != Page.EDITOR) newEditor()
             val answers = editor.body.pictures.isNotEmpty()
-            appendImages(photos, answers)
+            appendImages(photos, answers, ticket)
             if (answers) answerShare = AnswerShare(editor.draft, (answerShare?.serial ?: 0) + 1)
         }
     }
@@ -376,13 +386,14 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         imported(!fromAnswers, listOf(moved.last()))
     }
     fun cropPhoto(answer: Boolean, position: Int, bounds: List<Float>) = perform {
+        val ticket = readingTicket()
         val body = editor.body
         val images = (if (answer) body.answers else body.pictures).toMutableList()
         val files = media
         images[position] = withContext(Dispatchers.IO) { files.crop(images[position], bounds[0], bounds[1], bounds[2], bounds[3]) }
         val current = editor.body
         change(if (answer) current.copy(answers = images) else current.copy(pictures = images))
-        imported(answer, listOf(images[position]))
+        imported(answer, listOf(images[position]), ticket)
     }
     fun saveDraft() = perform {
         require(editor.card == null)
@@ -437,6 +448,8 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         vault.write(auth)
         session = auth; ready = false; cards = emptyList(); discarded = emptyList(); drafts = emptyList(); pending = 0
         hasReadingKey = runCatching { vault.readingKey(owner) != null }.getOrDefault(false)
+        readingChoice = savedReadingChoice()
+        readingRevision++
         editor = Editor(); queue = emptyList(); selected = ""; restoreCancel()
         syncText = ""; page = Page.HOME
         reload(); sync()

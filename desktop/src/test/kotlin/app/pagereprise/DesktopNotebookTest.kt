@@ -111,36 +111,45 @@ class DesktopNotebookTest {
         ui.runOnIdle { assertTrue(model.focus) }
     }
 
-    @Test fun bookAndFilterPagesSlideInTheRequestedDirection() {
+    @Test fun filterCurlFollowsThePointerAndOnlyPaintsInsideTheResultList() {
         ui.onNodeWithTag("book:math:false").performClick()
         val list = ui.onNodeWithTag("book-list")
+        val pane = ui.onNodeWithTag("book-pages")
         val preview = ui.onNodeWithText("选一道题，在这里预览。")
-        val left = list.fetchSemanticsNode().positionInRoot.x
-        val width = list.fetchSemanticsNode().size.width.toFloat()
-        val previewBounds = preview.fetchSemanticsNode().boundsInRoot
-        fun assertPageTurn(direction: Int, switch: () -> Unit) {
+        fun pixels(node: SemanticsNodeInteraction): IntArray {
+            val img = node.captureToImage()
+            return IntArray(img.width * img.height).also { img.readPixels(it) }
+        }
+        fun checkFold(forward: Boolean) {
+            val before = pixels(pane)
+            val right = pixels(preview)
+            val frame = pane.captureToImage()
+            val split = (list.fetchSemanticsNode().boundsInRoot.top - pane.fetchSemanticsNode().boundsInRoot.top).toInt()
             ui.mainClock.autoAdvance = false
             try {
-                switch()
-                val moved = (1..24).any {
-                    ui.mainClock.advanceTimeByFrame()
-                    val distance = direction * (list.fetchSemanticsNode().positionInRoot.x - left)
-                    distance > 1f && distance < width - 1f
+                list.performTouchInput {
+                    val start = if (forward) .82f else .18f
+                    val end = if (forward) .56f else .44f
+                    down(Offset(width * start, height * .72f))
+                    moveTo(Offset(width * end, height * .72f), delayMillis = 120)
                 }
-                assertTrue("An intermediate frame should show the incoming page", moved)
-                assertEquals(previewBounds, preview.fetchSemanticsNode().boundsInRoot)
+                ui.mainClock.advanceTimeBy(32)
+                val mid = pixels(pane)
+                assertArrayEquals("Header, search and filter buttons", before.copyOf(split * frame.width), mid.copyOf(split * frame.width))
+                assertArrayEquals("Wide preview", right, pixels(preview))
+                val y = frame.height - 12
+                val changed = (0 until frame.width).filter { mid[y * frame.width + it] != before[y * frame.width + it] }
+                assertTrue("The curved paper back must be visible before release", changed.size > 8)
+                assertTrue("Fold comes from the dragged edge", if (forward) changed.average() > frame.width / 2 else changed.average() < frame.width / 2)
+                list.performTouchInput { up() }
             } finally { ui.mainClock.autoAdvance = true }
             ui.waitForIdle()
-            assertEquals(left, list.fetchSemanticsNode().positionInRoot.x, 1f)
         }
-        assertPageTurn(1) {
-            ui.onNodeWithTag("book-switcher").performTouchInput { swipeLeft() }
-        }
-        ui.onNodeWithTag("choose-book:true").assertIsSelected()
-        ui.onNodeWithTag("filter:已到期").performClick().assertIsSelected()
-        assertPageTurn(-1) {
-            list.performTouchInput { swipe(Offset(width * .2f, height * .85f), Offset(width * .8f, height * .85f)) }
-        }
+        checkFold(true)
+        ui.onNodeWithTag("filter:已到期").assertIsSelected()
+        checkFold(false)
+        ui.onNodeWithTag("filter:全部").assertIsSelected()
+        list.performTouchInput { swipe(Offset(width * .7f, height * .8f), Offset(width * .7f - 22f, height * .8f)) }
         ui.onNodeWithTag("filter:全部").assertIsSelected()
     }
 
@@ -177,7 +186,7 @@ class DesktopNotebookTest {
         list.performTouchInput { swipeUp() }
         ui.runOnIdle { assertFalse(model.focus); assertEquals(Page.BOOK, model.page) }
         list.performScrollToIndex(20)
-        ui.onNodeWithTag("book-search").assertDoesNotExist()
+        ui.onNodeWithTag("book-search").assertIsNotDisplayed()
         list.performTouchInput { swipeLeft() }
         ui.onNodeWithTag("filter:已到期").assertIsSelected()
         ui.onNodeWithText("选一道题，在这里预览。").assertIsDisplayed()

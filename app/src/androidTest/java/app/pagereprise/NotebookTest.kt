@@ -25,6 +25,27 @@ import org.junit.runner.RunWith
 class NotebookTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
+    @Test fun editorAndSettingsShareTheLocalImageConversionChoice() {
+        val model = screen.activity.model
+        screen.waitUntil(12000) { model.ready }
+        screen.runOnIdle {
+            model.setReadingKey("device-fixture-key")
+            model.setAutomaticReading(false)
+            model.newEditor("math")
+        }
+        try {
+            screen.onNodeWithTag("auto-transcribe").performScrollTo().assertIsOff().performClick().assertIsOn()
+            screen.runOnIdle { model.settings() }
+            screen.onNodeWithTag("auto-transcribe").performScrollTo().assertIsOn().performClick().assertIsOff()
+            screen.runOnIdle {
+                assertTrue(model.hasReadingKey)
+                model.newEditor("english")
+            }
+            screen.onNodeWithTag("auto-transcribe").assertIsOff()
+            assertEquals(0, model.readingCount)
+        } finally { screen.runOnIdle { model.setReadingKey(null); model.home() } }
+    }
+
     @Test fun syncedReadingNeedsNoKeyAndKeepsTheAnswerBehindReveal() {
         val model = screen.activity.model
         val hash = digest("fixture image".toByteArray())
@@ -71,6 +92,18 @@ class NotebookTest {
         heading.performTouchInput { swipeLeft() }
         screen.runOnIdle { assertTrue(model.focus) }
         val list = screen.onNodeWithTag("book-list")
+        val search = screen.onNodeWithTag("book-search")
+        val searchBounds = search.fetchSemanticsNode().boundsInRoot
+        val filters = screen.onNodeWithTag("book-filters")
+        val filterBounds = filters.fetchSemanticsNode().boundsInRoot
+        list.performTouchInput {
+            down(Offset(width * .76f, height * .78f))
+            moveTo(Offset(width * .51f, height * .78f), delayMillis = 100)
+        }
+        assertEquals(searchBounds, search.fetchSemanticsNode().boundsInRoot)
+        assertEquals(filterBounds, filters.fetchSemanticsNode().boundsInRoot)
+        list.performTouchInput { cancel() }
+        screen.onNodeWithTag("filter:全部").assertIsSelected()
         fun switchBelow(left: Boolean) = list.performTouchInput {
             val y = height * .88f
             val start = Offset(width * .8f, y)

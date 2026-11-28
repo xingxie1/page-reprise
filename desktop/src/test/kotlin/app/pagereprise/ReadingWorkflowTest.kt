@@ -73,6 +73,9 @@ class ReadingWorkflowTest {
                 val target = ReadingPage(false, model.editor.body.pictures.single())
                 assertEquals(0, calls)
                 model.setReadingKey("synthetic-device-key")
+                model.setAutomaticReading(true)
+                assertEquals(0, calls)
+                model.recognize(target)
                 until { model.readingError(target) == "余额不足" }
                 model.recognize(target)
                 until { calls == 2 }
@@ -117,6 +120,7 @@ class ReadingWorkflowTest {
                 suspend fun until(ok: () -> Boolean) = withTimeout(10000) { while (!ok()) delay(15) }
                 until { model.ready }
                 model.setReadingKey(fakeKey)
+                model.setAutomaticReading(true)
                 assertFalse(platform.directory.walk().filter { it.extension == "dpapi" }.single().readBytes().toString(Charsets.ISO_8859_1).contains(fakeKey))
                 assertNull(platform.vault.readingKey("another-account"))
                 model.newEditor("math")
@@ -153,5 +157,60 @@ class ReadingWorkflowTest {
                 model.close()
             }
         } finally { scope.cancel(); platform.store.close(); other.store.close() }
+    }
+
+    @Test fun imageOnlyIsRememberedAndNeverBackfillsWhenEnabledAgain() = runBlocking {
+        val platform = StudyPlatform(temp.newFolder("choice"))
+        val owner = "local:" + newId()
+        platform.prefs.putString("guest", owner)
+        platform.vault.saveReadingKey(owner, "fixture-existing-key")
+        val roles = mutableListOf<Boolean>()
+        val wait = CompletableDeferred<Unit>()
+        val reader = ImageTranscriber { _, _, answer, _ -> roles.add(answer); wait.await(); "已识别" }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        fun image(color: Int): InputFile {
+            val bitmap = BufferedImage(40, 30, BufferedImage.TYPE_INT_RGB).apply { setRGB(12, 15, color) }
+            val bytes = ByteArrayOutputStream().also { ImageIO.write(bitmap, "png", it) }.toByteArray()
+            return InputFile(bytes::inputStream)
+        }
+        try {
+            withContext(Dispatchers.Main) {
+                suspend fun until(ok: () -> Boolean) = withTimeout(10000) { while (!ok()) delay(10) }
+                val upgraded = StudyModel(platform, scope, reader)
+                until { upgraded.ready }
+                assertTrue(upgraded.automaticReading)
+                upgraded.setAutomaticReading(false)
+                upgraded.close()
+                val model = StudyModel(platform, scope, reader)
+                until { model.ready }
+                assertFalse(model.automaticReading)
+                assertTrue(model.hasReadingKey)
+                model.newEditor("math")
+                model.importImages(listOf(image(1)), false)
+                until { !model.busy }
+                model.shared(listOf(image(2)))
+                until { !model.busy }
+                model.cropPhoto(true, 0, listOf(0f, 0f, .8f, .8f))
+                until { !model.busy }
+                model.movePhoto(true, 0)
+                assertEquals(0, roles.size)
+                model.setAutomaticReading(true)
+                assertEquals(0, model.readingCount)
+                model.shared(listOf(image(3), image(0xffffff)))
+                until { !model.busy && roles.size == 1 }
+                model.setAutomaticReading(false)
+                assertEquals(0, model.readingCount)
+                wait.complete(Unit)
+                val target = ReadingPage(false, model.editor.body.pictures.first())
+                model.recognize(target)
+                until { model.readingCount == 0 }
+                assertEquals(listOf(true, false), roles)
+                assertEquals("已识别", model.editor.body.reading(false, target.hash))
+                assertTrue(model.editor.body.readings!!.answers.isEmpty())
+                model.setReadingKey("fixture-replacement-key")
+                assertFalse(model.automaticReading)
+                model.close()
+            }
+        } finally { scope.cancel(); platform.store.close() }
     }
 }

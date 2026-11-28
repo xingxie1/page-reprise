@@ -25,7 +25,6 @@ internal fun EditorScreen(model: StudyModel) {
     val editor = model.editor
     var answerPick by rememberSaveable { mutableStateOf(false) }
     var crop by remember { mutableStateOf<Pair<Boolean,Int>?>(null) }
-    var keyDialog by remember { mutableStateOf(false) }
     val picker = rememberImagePicker { files -> model.importImages(files, answerPick) }
     val answerHeading = remember(editor.draft) { BringIntoViewRequester() }
     LaunchedEffect(model.answerShare, editor.draft) {
@@ -34,7 +33,7 @@ internal fun EditorScreen(model: StudyModel) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Heading(if (editor.card == null) "录入一道题" else "编辑原题", "先保存干净的题面，答案和来源可以以后补。")
         CaptureTools(model)
-        if (!model.hasReadingKey) TextButton(onClick = { keyDialog = true }) { Text("启用图片自动识别") }
+        AutomaticReadingSwitch(model)
         if (editor.card == null) Sheet(Modifier.fillMaxWidth()) {
             Text("放进哪一科？", fontWeight = FontWeight.Bold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -91,7 +90,6 @@ internal fun EditorScreen(model: StudyModel) {
         }
         if (editor.card == null) OutlinedButton(onClick = model::saveDraft, enabled = !model.busy, modifier = Modifier.fillMaxWidth()) { Text("仅存为本机草稿") }
     }
-    if (keyDialog) ReadingKeyDialog(model) { keyDialog = false }
     crop?.let { (answer,index) ->
         val hash = (if (answer) editor.body.answers else editor.body.pictures).getOrNull(index)
         if (hash != null) CropDialog(model,hash,{ crop = null }) { bounds -> crop = null; model.cropPhoto(answer,index,bounds) }

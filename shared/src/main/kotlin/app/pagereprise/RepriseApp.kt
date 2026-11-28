@@ -26,6 +26,8 @@ fun RepriseApp(model: StudyModel, platformDialogs: @Composable () -> Unit = {}) 
         val colors = MaterialTheme.colorScheme
         val todayList = key(model.owner) { rememberLazyListState() }
         val snacks = remember { SnackbarHostState() }
+        val bookTurn = rememberPageTurn { if (model.page == Page.BOOK) model.openBook(model.subject, it == 1) }
+        DisposableEffect(model.page, model.subject) { onDispose { bookTurn.reset() } }
         var leave by remember { mutableStateOf(false) }
         val navigateBack: () -> Unit = {
             if (!model.busy && model.page == Page.EDITOR && model.editor.body != Body()) leave = true else model.back()
@@ -38,7 +40,7 @@ fun RepriseApp(model: StudyModel, platformDialogs: @Composable () -> Unit = {}) 
             val background = if (model.viewedPhoto == null) Modifier else Modifier.clearAndSetSemantics { }
             Scaffold(modifier = background, containerColor = colors.background, contentColor = colors.onBackground, snackbarHost = { SnackbarHost(snacks) }) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-                    val headerSwipe = if (model.page == Page.BOOK) Modifier.onNotebookSwipe { model::stepBook } else Modifier
+                    val headerSwipe = if (model.page == Page.BOOK) Modifier.onNotebookSwipe(bookTurn, if (model.focus) 1 else 0, 1) else Modifier
                     Row(Modifier.fillMaxWidth().height(56.dp).then(headerSwipe).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (model.page != Page.HOME) TextButton(onClick = navigateBack, enabled = !model.busy) { Text("‹ 返回") }
                         else {
@@ -63,7 +65,7 @@ fun RepriseApp(model: StudyModel, platformDialogs: @Composable () -> Unit = {}) 
                         when (model.page) {
                             Page.HOME -> Home(model)
                             Page.TODAY -> TodayScreen(model, todayList)
-                            Page.BOOK -> Book(model)
+                            Page.BOOK -> Book(model, bookTurn)
                             Page.REVIEW -> Review(model)
                             Page.DETAIL -> {
                                 val card = model.cards.firstOrNull { it.id == model.selected }

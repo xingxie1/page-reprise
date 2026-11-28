@@ -4,10 +4,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -92,8 +96,8 @@ internal fun Settings(model: StudyModel) {
 internal fun ReadingKeySettings(model: StudyModel) {
     var edit by remember(model.owner) { mutableStateOf(false) }
     Sheet(Modifier.fillMaxWidth()) {
-        Heading("图片识别", if (model.hasReadingKey) "此设备已启用 DeepSeek" else "此设备尚未配置 DeepSeek")
-        Text("导入的新图会交给 DeepSeek 转写，费用计入你自己的账号。其他设备同步后可以直接阅读。")
+        Heading("图片识别", if (model.hasReadingKey) "此设备已配置 DeepSeek" else "此设备尚未配置 DeepSeek")
+        AutomaticReadingSwitch(model)
         OutlinedButton(onClick = { edit = true }) { Text(if (model.hasReadingKey) "更换本机 Key" else "设置本机 Key") }
         if (model.hasReadingKey) TextButton(onClick = { model.setReadingKey(null) }) { Text("清除本机 Key") }
     }
@@ -101,12 +105,30 @@ internal fun ReadingKeySettings(model: StudyModel) {
 }
 
 @Composable
-internal fun ReadingKeyDialog(model: StudyModel, close: () -> Unit) {
+internal fun AutomaticReadingSwitch(model: StudyModel) {
+    var needsKey by remember(model.owner) { mutableStateOf(false) }
+    val enabled = model.automaticReading
+    Row(Modifier.fillMaxWidth().testTag("auto-transcribe").toggleable(value = enabled, role = Role.Switch,
+        onValueChange = { if (it && !model.hasReadingKey) needsKey = true else model.setAutomaticReading(it) })
+        .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text("导入图片时转为文字", style = MaterialTheme.typography.titleSmall)
+            Text(if (enabled) "新图会发给 DeepSeek，按你的 Key 计费。" else "只保存原图，支持按张识别。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = enabled, onCheckedChange = null)
+    }
+    if (needsKey) ReadingKeyDialog(model, action = "保存并启用", saved = { model.setAutomaticReading(true) }) { needsKey = false }
+}
+
+@Composable
+internal fun ReadingKeyDialog(model: StudyModel, action: String = "保存 Key", saved: () -> Unit = {}, close: () -> Unit) {
     var key by remember(model.owner) { mutableStateOf("") }
     val links = LocalUriHandler.current
     AlertDialog(onDismissRequest = close, title = { Text("本机 DeepSeek API Key") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("从 DeepSeek 开放平台的 API Keys 页面复制个人密钥。启用后，新导入的图片会直接发送至 DeepSeek，按你的账号计费。密钥由系统加密保存在此设备。")
+            Text("识别时，图片会直接发给 DeepSeek，按你的账号计费。密钥由系统加密保存在此设备。")
             TextButton(onClick = { runCatching { links.openUri("https://platform.deepseek.com/api_keys") }
                 .onFailure { model.message = "请在浏览器打开 platform.deepseek.com/api_keys" } }) { Text("打开 DeepSeek 密钥页面") }
             OutlinedTextField(key, { key = it }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
@@ -114,6 +136,6 @@ internal fun ReadingKeyDialog(model: StudyModel, close: () -> Unit) {
                 label = { Text("API Key") })
         }
     }, confirmButton = { TextButton(enabled = key.trim().length in 12..512 && key.trim().all { it.code in 33..126 },
-        onClick = { if (model.setReadingKey(key)) { key = ""; close() } }) { Text("保存并启用") } },
+        onClick = { if (model.setReadingKey(key)) { key = ""; saved(); close() } }) { Text(action) } },
         dismissButton = { TextButton(onClick = close) { Text("取消") } })
 }

@@ -14,15 +14,21 @@ import app.pagereprise.core.*
 internal fun ReadingEditor(model: StudyModel, target: ReadingPage) {
     val saved = model.editor.body.reading(target.answer, target.hash)
     var editing by remember(model.editor.draft, target) { mutableStateOf(false) }
+    var needsKey by remember(model.editor.draft, target) { mutableStateOf(false) }
     val error = model.readingError(target)
     if (error != null) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     if (model.recognizing(target)) Text("正在识别…", color = MaterialTheme.colorScheme.primary)
     else if (saved != null) ReadingMarkdown(saved, model.readingSize)
     Row {
-        if (saved == null && model.hasReadingKey && !model.recognizing(target))
-            TextButton(onClick = { model.recognize(target) }, enabled = !model.busy) { Text(if (error == null) "识别这张图" else "重试识别") }
+        if (saved == null && !model.recognizing(target))
+            TextButton(onClick = { if (model.hasReadingKey) model.recognize(target) else needsKey = true },
+                enabled = !model.busy) { Text(if (error == null) "识别这张图" else "重试识别") }
         TextButton(onClick = { editing = true }, enabled = !model.busy) { Text(if (saved != null) "校对阅读稿" else "手动誊写") }
     }
+    if (needsKey) ReadingKeyDialog(model, action = "保存并识别此图", saved = {
+        model.setAutomaticReading(false)
+        model.recognize(target)
+    }) { needsKey = false }
     if (editing) {
         var text by remember { mutableStateOf(saved.orEmpty()) }
         AlertDialog(onDismissRequest = { editing = false }, title = { Text(if (target.answer) "校对答案阅读稿" else "校对题干阅读稿") },
