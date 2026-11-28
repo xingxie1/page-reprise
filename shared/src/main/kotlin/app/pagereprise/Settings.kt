@@ -3,12 +3,14 @@ package app.pagereprise
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.pagereprise.core.*
 
@@ -108,6 +110,7 @@ internal fun ReadingKeyDialog(model: StudyModel, close: () -> Unit) {
             TextButton(onClick = { runCatching { links.openUri("https://platform.deepseek.com/api_keys") }
                 .onFailure { model.message = "请在浏览器打开 platform.deepseek.com/api_keys" } }) { Text("打开 DeepSeek 密钥页面") }
             OutlinedTextField(key, { key = it }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
                 label = { Text("API Key") })
         }
     }, confirmButton = { TextButton(enabled = key.trim().length in 12..512 && key.trim().all { it.code in 33..126 },

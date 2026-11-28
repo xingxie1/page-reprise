@@ -25,7 +25,7 @@ import org.commonmark.parser.Parser
 
 private val parser = Parser.builder().extensions(listOf(TablesExtension.create())).build()
 // Keep code and escaped punctuation untouched while CommonMark parses the surrounding text.
-private val tokens = Regex("""(?ms)^ {0,3}(`{3,}|~{3,})[^\n]*\n.*?(?:^ {0,3}\1[ \t]*$|\z)|(`+)[^\n]*?\2|\\\[.*?\\]|\\\(.*?\\\)|\$\$.*?\$\$|(?<!\\)\$(?![\s$])(?:\\.|[^$\n])+?(?<!\\)\$|\\.""")
+private val tokens = Regex("""(?ms)^ {0,3}(`{3,}|~{3,})[^\n]*\n.*?(?:^ {0,3}\1[ \t]*$|\z)|(`+)[^\n]*?\2|\\\[.*?\\\]|\\\(.*?\\\)|\$\$.*?\$\$|(?<!\\)\$(?![\s$])(?:\\.|[^$\n])+?(?<!\\)\$|\\.""")
 private val marker = Regex("\uE000(\\d+)\uE001")
 private val commands = Regex("""\\([a-zA-Z]+)""")
 private val allowed = """
@@ -45,7 +45,7 @@ private val allowed = """
     begin end cases matrix pmatrix bmatrix vmatrix Vmatrix aligned gathered limits nolimits displaystyle textstyle
     overset underset stackrel underbrace overbrace angle degree top bot triangle hom Pr complement not prime
 """.trim().split(Regex("\\s+")).toSet()
-private val environments = Regex("""\\(?:begin|end)\s*\{([^}]*)}""")
+private val environments = Regex("""\\(?:begin|end)\s*\{([^}]*)\}""")
 private val allowedEnvironments = setOf("cases", "matrix", "pmatrix", "bmatrix", "vmatrix", "Vmatrix", "aligned", "gathered")
 
 internal fun renderableFormula(tex: String): Boolean {

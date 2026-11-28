@@ -30,7 +30,8 @@ class NotebookTest {
         val hash = digest("fixture image".toByteArray())
         val question = "已同步的题面 " + newId().take(6)
         val answer = "答案只在展开后出现"
-        val body = Body(pictures = listOf(hash), answers = listOf(hash)).withReading(false, hash, question)
+        val formula = """\frac{1}{2}"""
+        val body = Body(pictures = listOf(hash), answers = listOf(hash)).withReading(false, hash, question + "\n\n$$" + formula + "$$")
             .withReading(true, hash, answer)
         assertTrue(ReadingPrompts.system.contains("〔待核对〕"))
         assertNotNull(formulaImage("""\frac{1}{2}""", 24f, -1))
@@ -46,6 +47,7 @@ class NotebookTest {
         screen.runOnIdle { model.detail(model.cards.first { it.body == body }) }
         val wide = screen.activity.resources.configuration.screenWidthDp >= 700
         screen.onNodeWithTag(if (wide) "read-mode-BOTH" else "read-mode-TEXT").assertIsSelected()
+        screen.waitUntil(10000) { screen.onAllNodesWithContentDescription(formula).fetchSemanticsNodes().isNotEmpty() }
         screen.onNodeWithText(question).assertExists()
         screen.onNodeWithText(answer).assertDoesNotExist()
         screen.onNodeWithText("核对答案与错因").performScrollTo().performClick()
