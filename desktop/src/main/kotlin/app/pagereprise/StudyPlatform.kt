@@ -40,13 +40,18 @@ class AppPreferences(private val file: File) {
 }
 
 class Vault(private val file: File) {
-    fun read(): Session? = if (!file.isFile) null else {
+    fun read(): Session? = secret(file)?.let { Codec.json.fromJson(it, Session::class.java) }
+    fun write(session: Session?) = save(file, session?.let(Codec.json::toJson))
+    private fun keyFile(owner: String) = File(file.parentFile, "deepseek-" + digest(owner.toByteArray()) + ".dpapi")
+    fun readingKey(owner: String) = secret(keyFile(owner))
+    fun saveReadingKey(owner: String, value: String?) = save(keyFile(owner), value)
+    private fun secret(file: File): String? = if (!file.isFile) null else {
         val plain = Crypt32Util.cryptUnprotectData(file.readBytes())
-        try { Codec.json.fromJson(String(plain, Charsets.UTF_8), Session::class.java) } finally { plain.fill(0) }
+        try { String(plain, Charsets.UTF_8) } finally { plain.fill(0) }
     }
-    fun write(session: Session?) {
-        if (session == null) { Files.deleteIfExists(file.toPath()); return }
-        val plain = Codec.json.toJson(session).toByteArray(Charsets.UTF_8)
+    private fun save(file: File, value: String?) {
+        if (value == null) { Files.deleteIfExists(file.toPath()); return }
+        val plain = value.toByteArray(Charsets.UTF_8)
         try {
             val sealed = Crypt32Util.cryptProtectData(plain)
             writeAtomically(file) { it.write(sealed) }

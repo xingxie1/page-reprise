@@ -54,9 +54,9 @@ internal fun rememberImagePicker(receive: (List<InputFile>) -> Unit): () -> Unit
 }
 
 @Composable
-internal fun rememberBackupExporter(receive: (OutputFile) -> Unit): (String) -> Unit {
+internal fun rememberDocumentExporter(markdown: Boolean = false, receive: (OutputFile) -> Unit): (String) -> Unit {
     val resolver = LocalContext.current.contentResolver
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(if (markdown) "text/markdown" else "application/zip")) { uri ->
         if (uri != null) receive(OutputFile { content -> requireNotNull(resolver.openOutputStream(uri, "wt")).use(content) })
     }
     return { name -> picker.launch(name) }

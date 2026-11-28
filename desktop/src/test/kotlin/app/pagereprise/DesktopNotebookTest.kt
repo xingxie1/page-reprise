@@ -52,6 +52,32 @@ class DesktopNotebookTest {
         ui.waitUntil(10000) { !model.busy }
     }
 
+    @Test fun readingDefaultsToSideBySideAndExportsAPortableCorrectedDocument() {
+        ui.runOnIdle { model.newEditor("math") }
+        paste(0x188090)
+        paste(0x312451)
+        val q = model.editor.body.pictures.single()
+        val a = model.editor.body.answers.single()
+        val formula = """\int_0^1 x\,dx"""
+        ui.runOnIdle {
+            assertTrue(model.correctReading(ReadingPage(false, q), "计算下列积分\n\n$$" + formula + "$$"))
+            assertTrue(model.correctReading(ReadingPage(true, a), "只在展开后显示"))
+            model.saveCard()
+        }
+        ui.waitUntil(10000) { !model.busy && model.cards.isNotEmpty() }
+        ui.runOnIdle { model.detail(model.cards.single()) }
+        ui.onNodeWithTag("read-mode-BOTH").assertIsSelected()
+        ui.waitUntil(10000) { ui.onAllNodesWithContentDescription(formula).fetchSemanticsNodes().isNotEmpty() }
+        ui.onNodeWithText("只在展开后显示").assertDoesNotExist()
+        ui.onNodeWithText("核对答案与错因").performScrollTo().performClick()
+        ui.onNodeWithText("只在展开后显示").assertExists()
+        val out = temp.newFile("reading.md")
+        ui.runOnIdle { model.exportReading(model.cards.single(), OutputFile { content -> out.outputStream().use(content) }) }
+        ui.waitUntil(10000) { !model.busy }
+        assertTrue(out.readText().contains(formula))
+        assertTrue(out.readText().contains("只在展开后显示"))
+    }
+
     @OptIn(ExperimentalTestApi::class)
     @Test fun subjectCardChooserAndMouseDragsUseTheStartingRegion() {
         val subject = ui.onNodeWithTag("subject:math")

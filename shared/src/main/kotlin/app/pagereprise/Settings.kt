@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.pagereprise.core.*
@@ -21,10 +22,10 @@ internal fun Settings(model: StudyModel) {
     var showLogin by rememberSaveable { mutableStateOf(false) }
     var transfer by remember { mutableStateOf(false) }
     var logout by remember { mutableStateOf(false) }
-    val exporter = rememberBackupExporter(model::export)
+    val exporter = rememberDocumentExporter(receive = model::export)
     val importer = rememberBackupImporter(model::stage)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Heading("账号与数据", "数据只在自己的账号和设备间流转。")
+        Text("账号与数据", style = MaterialTheme.typography.headlineSmall)
         model.updates?.let { updates ->
             Sheet(Modifier.fillMaxWidth()) {
                 Heading("版本更新", "当前版本 " + updates.installed)
@@ -59,8 +60,9 @@ internal fun Settings(model: StudyModel) {
                 }
             }
         }
+        ReadingKeySettings(model)
         Sheet(Modifier.fillMaxWidth()) {
-            Heading("整库备份", "包含正式题图、各科归属和作答历史；不含密码与本机草稿。")
+            Heading("整库备份", "包含正式题图、阅读稿、各科归属和作答历史。")
             if (model.session == null) Text("试用备份绑定本次安装。换机请先迁入受邀账号，账号备份可跨设备恢复。")
             OutlinedButton(onClick = { exporter("循页-" + model.today + ".zip") }, enabled = !model.busy) { Text("导出备份包") }
             OutlinedButton(onClick = { importer() }, enabled = !model.busy) { Text("选择备份并预览") }
@@ -82,4 +84,33 @@ internal fun Settings(model: StudyModel) {
     if (logout) Confirm("退出账号？", "本设备缓存仍按账号隔离；未上传的记录需再次登录同一账号后同步。", "退出", { logout = false }) {
         logout = false; model.logout()
     }
+}
+
+@Composable
+internal fun ReadingKeySettings(model: StudyModel) {
+    var edit by remember(model.owner) { mutableStateOf(false) }
+    Sheet(Modifier.fillMaxWidth()) {
+        Heading("图片识别", if (model.hasReadingKey) "此设备已启用 DeepSeek" else "此设备尚未配置 DeepSeek")
+        Text("导入的新图会交给 DeepSeek 转写，费用计入你自己的账号。其他设备同步后可以直接阅读。")
+        OutlinedButton(onClick = { edit = true }) { Text(if (model.hasReadingKey) "更换本机 Key" else "设置本机 Key") }
+        if (model.hasReadingKey) TextButton(onClick = { model.setReadingKey(null) }) { Text("清除本机 Key") }
+    }
+    if (edit) ReadingKeyDialog(model) { edit = false }
+}
+
+@Composable
+internal fun ReadingKeyDialog(model: StudyModel, close: () -> Unit) {
+    var key by remember(model.owner) { mutableStateOf("") }
+    val links = LocalUriHandler.current
+    AlertDialog(onDismissRequest = close, title = { Text("本机 DeepSeek API Key") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("从 DeepSeek 开放平台的 API Keys 页面复制个人密钥。启用后，新导入的图片会直接发送至 DeepSeek，按你的账号计费。密钥由系统加密保存在此设备。")
+            TextButton(onClick = { runCatching { links.openUri("https://platform.deepseek.com/api_keys") }
+                .onFailure { model.message = "请在浏览器打开 platform.deepseek.com/api_keys" } }) { Text("打开 DeepSeek 密钥页面") }
+            OutlinedTextField(key, { key = it }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                label = { Text("API Key") })
+        }
+    }, confirmButton = { TextButton(enabled = key.trim().length in 12..512 && key.trim().all { it.code in 33..126 },
+        onClick = { if (model.setReadingKey(key)) { key = ""; close() } }) { Text("保存并启用") } },
+        dismissButton = { TextButton(onClick = close) { Text("取消") } })
 }

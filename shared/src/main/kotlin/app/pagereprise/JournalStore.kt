@@ -16,6 +16,7 @@ interface StudyJournal {
     suspend fun item(owner: String, card: String): List<Entry>
     suspend fun existing(owner: String, id: String): Entry?
     suspend fun put(entry: Entry): Long
+    suspend fun updatePayload(owner: String, id: String, payload: String)
     suspend fun sent(owner: String, ids: List<String>)
     suspend fun drafts(owner: String): List<Draft>
     suspend fun saveDraft(draft: Draft)
@@ -47,7 +48,14 @@ abstract class JournalStore(private val mediaFor: (String) -> MediaFiles) {
                 val added = dao.put(Entry(owner, event.id, event.card, encoded, pending))
                 if (added == -1L) {
                     val existing = requireNotNull(dao.existing(owner, event.id))
-                    require(Codec.decode(existing.payload) == event) { "同一操作标识内容不一致，已停止合并" }
+                    val old = Codec.decode(existing.payload)
+                    if (old != event) {
+                        val body = event.body
+                        val previous = old.body
+                        require(body != null && previous != null && old.copy(body = previous.copy(readings = body.readings)) == event &&
+                            (body.readings == null || previous.readings == null)) { "同一操作标识内容不一致，已停止合并" }
+                        if (previous.readings == null) dao.updatePayload(owner, event.id, encoded)
+                    }
                 }
             }
         }

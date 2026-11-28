@@ -102,7 +102,7 @@ private fun BookPages(model: StudyModel, wide: Boolean) {
         if (wide) {
             VerticalDivider()
             Box(Modifier.weight(1.15f)) {
-                page.rows.firstOrNull { it.id == peek }?.let { Details(model, it) }
+                page.rows.firstOrNull { it.id == peek }?.let { Details(model, it, widePreview = true) }
                     ?: Text("选一道题，在这里预览。", Modifier.padding(24.dp))
             }
         }

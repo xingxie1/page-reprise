@@ -25,6 +25,7 @@ internal fun EditorScreen(model: StudyModel) {
     val editor = model.editor
     var answerPick by rememberSaveable { mutableStateOf(false) }
     var crop by remember { mutableStateOf<Pair<Boolean,Int>?>(null) }
+    var keyDialog by remember { mutableStateOf(false) }
     val picker = rememberImagePicker { files -> model.importImages(files, answerPick) }
     val answerHeading = remember(editor.draft) { BringIntoViewRequester() }
     LaunchedEffect(model.answerShare, editor.draft) {
@@ -33,6 +34,7 @@ internal fun EditorScreen(model: StudyModel) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Heading(if (editor.card == null) "录入一道题" else "编辑原题", "先保存干净的题面，答案和来源可以以后补。")
         CaptureTools(model)
+        if (!model.hasReadingKey) TextButton(onClick = { keyDialog = true }) { Text("启用图片自动识别") }
         if (editor.card == null) Sheet(Modifier.fillMaxWidth()) {
             Text("放进哪一科？", fontWeight = FontWeight.Bold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -49,6 +51,7 @@ internal fun EditorScreen(model: StudyModel) {
                     modifier = if (answers) Modifier.bringIntoViewRequester(answerHeading) else Modifier, fontWeight = FontWeight.Bold)
                 images.forEachIndexed { index, hash ->
                     Photo(model, hash, "第 " + (index + 1) + " 张")
+                    ReadingEditor(model, ReadingPage(answers, hash))
                     FlowRow {
                         TextButton(onClick = { crop = answers to index }) { Text("裁切") }
                         TextButton(enabled = index > 0, onClick = {
@@ -79,31 +82,19 @@ internal fun EditorScreen(model: StudyModel) {
             }
         }
         OutlinedTextField(editor.body.source, { model.change(model.editor.body.copy(source = it)) }, Modifier.fillMaxWidth(), label = { Text("题号、页码或考点（选填）") })
+        if (model.readingCount > 0) {
+            Text("还有 " + model.readingCount + " 张图正在转写，完成后即可一起保存。")
+            TextButton(onClick = model::stopReading) { Text("跳过剩余识别，保留原图") }
+        }
         Button(onClick = model::saveCard, enabled = !model.busy && editor.subject.isNotBlank() && (editor.body.title.isNotBlank() || editor.body.pictures.isNotEmpty()), modifier = Modifier.fillMaxWidth().testTag("save-card")) {
             Text(if (editor.card == null) "保存到" + Subjects.name(editor.subject) + "普通本" else "保存改动，不改变排期")
         }
         if (editor.card == null) OutlinedButton(onClick = model::saveDraft, enabled = !model.busy, modifier = Modifier.fillMaxWidth()) { Text("仅存为本机草稿") }
     }
+    if (keyDialog) ReadingKeyDialog(model) { keyDialog = false }
     crop?.let { (answer,index) ->
         val hash = (if (answer) editor.body.answers else editor.body.pictures).getOrNull(index)
         if (hash != null) CropDialog(model,hash,{ crop = null }) { bounds -> crop = null; model.cropPhoto(answer,index,bounds) }
-    }
-}
-
-@Composable
-private fun Question(model: StudyModel, card: Card, reveal: Boolean, toggle: () -> Unit) {
-    Sheet(Modifier.fillMaxWidth()) {
-        Text("题干", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text(card.label, style = MaterialTheme.typography.titleMedium)
-        card.body.pictures.forEach { Photo(model, it, "题干图，点按放大") }
-        if (card.body.source.isNotEmpty()) Text(card.body.source, style = MaterialTheme.typography.bodySmall)
-    }
-    OutlinedButton(onClick = toggle, modifier = Modifier.fillMaxWidth()) { Text(if (reveal) "收起答案与错因" else "核对答案与错因") }
-    if (reveal) Sheet(Modifier.fillMaxWidth()) {
-        Text("答案与错因", fontWeight = FontWeight.Bold)
-        if (card.body.solution.isNotBlank()) Text(card.body.solution)
-        card.body.answers.forEach { Photo(model, it, "参考答案") }
-        if (card.body.solution.isBlank() && card.body.answers.isEmpty()) Text("尚未补充答案，可对照原稿自行判断。")
     }
 }
 
@@ -120,7 +111,7 @@ internal fun Review(model: StudyModel) {
             Text("这一轮已在其他设备处理或需要核对，不再重复计分。")
             Button(onClick = model::next) { Text("继续") }
         } else {
-            Question(model, card, reveal) { reveal = !reveal }
+            ReadingQuestion(model, card, reveal, false) { reveal = !reveal }
             if (model.manual) Button(onClick = model::next, modifier = Modifier.fillMaxWidth()) { Text("下一题 · 不计分") }
             else {
                 val allCached = remember(card.body.pictures, model.owner, model.mediaRevision) { card.body.pictures.all { model.media.file(it).isFile } }
@@ -144,13 +135,14 @@ internal fun Confirm(title: String, description: String, action: String, cancel:
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun Details(model: StudyModel, card: Card) {
+internal fun Details(model: StudyModel, card: Card, widePreview: Boolean = false) {
     var reveal by rememberSaveable(card.id) { mutableStateOf(false) }
     var moving by remember(card.id) { mutableStateOf(false) }
     var target by remember(card.id) { mutableStateOf("") }
     var undo by remember(card.id) { mutableStateOf(false) }
     var deleting by remember(card.id) { mutableStateOf(false) }
     var confirmChoice by remember(card.id) { mutableStateOf<Event?>(null) }
+    val export = rememberDocumentExporter(markdown = true) { model.exportReading(card, it) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Heading("题目详情", status(card))
         if (card.conflict) Sheet(Modifier.fillMaxWidth()) {
@@ -166,6 +158,9 @@ internal fun Details(model: StudyModel, card: Card) {
                 if (option.kind == Kind.EDIT) {
                     Text(option.body?.solution.orEmpty(), style = MaterialTheme.typography.bodySmall)
                     (option.body?.pictures.orEmpty() + option.body?.answers.orEmpty()).forEach { Photo(model, it, "待核对版本") }
+                    option.body?.let { body -> listOf(false, true).forEach { answer -> body.pages(answer).forEach { hash ->
+                        body.reading(answer, hash)?.let { Text((if (answer) "答案稿　" else "题干稿　") + it) }
+                    } } }
                 }
                 OutlinedButton(onClick = {
                     if (option.kind == Kind.REVIEW && option.value == "wrong" && card.plan.resets == 1) confirmChoice = option
@@ -173,9 +168,11 @@ internal fun Details(model: StudyModel, card: Card) {
                 }, enabled = !model.busy) { Text(StudyDays.date(option.at).toString() + " · " + label.take(80)) }
             }
         }
-        Question(model, card, reveal) { reveal = !reveal }
+        if (widePreview && card.body.readings != null) TextButton(onClick = { model.detail(card) }) { Text("展开阅读") }
+        ReadingQuestion(model, card, reveal, widePreview) { reveal = !reveal }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = { model.detail(card); model.editCard(card) }, enabled = !card.conflict) { Text("编辑题目") }
+            if (!card.conflict) TextButton(onClick = { export(Subjects.name(card.subject) + "-" + card.number + ".md") }) { Text("导出 Markdown") }
             TextButton(onClick = { moving = !moving }, enabled = !card.conflict) { Text("更正科目") }
             if (card.canUndo) TextButton(onClick = { undo = true }) { Text("撤销最近一轮") }
             if (!card.plan.focus) TextButton(onClick = { deleting = true }, enabled = !model.busy && !card.conflict) {

@@ -25,6 +25,36 @@ import org.junit.runner.RunWith
 class NotebookTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
+    @Test fun syncedReadingNeedsNoKeyAndKeepsTheAnswerBehindReveal() {
+        val model = screen.activity.model
+        val hash = digest("fixture image".toByteArray())
+        val question = "已同步的题面 " + newId().take(6)
+        val answer = "答案只在展开后出现"
+        val body = Body(pictures = listOf(hash), answers = listOf(hash)).withReading(false, hash, question)
+            .withReading(true, hash, answer)
+        assertTrue(ReadingPrompts.system.contains("〔待核对〕"))
+        assertNotNull(formulaImage("""\frac{1}{2}""", 24f, -1))
+        val vault = Vault(screen.activity)
+        val fixture = "synthetic-" + newId()
+        try {
+            vault.saveReadingKey("fixture-owner", fixture)
+            assertEquals(fixture, vault.readingKey("fixture-owner"))
+            assertNull(vault.readingKey("fixture-friend"))
+        } finally { vault.saveReadingKey("fixture-owner", null) }
+        screen.runOnIdle { model.newEditor("math"); model.change(body); model.saveCard() }
+        screen.waitUntil(15000) { !model.busy && model.cards.any { it.body == body } }
+        screen.runOnIdle { model.detail(model.cards.first { it.body == body }) }
+        val wide = screen.activity.resources.configuration.screenWidthDp >= 700
+        screen.onNodeWithTag(if (wide) "read-mode-BOTH" else "read-mode-TEXT").assertIsSelected()
+        screen.onNodeWithText(question).assertExists()
+        screen.onNodeWithText(answer).assertDoesNotExist()
+        screen.onNodeWithText("核对答案与错因").performScrollTo().performClick()
+        screen.onNodeWithText(answer).assertExists()
+        screen.onNodeWithText("收起答案与错因").performScrollTo().performClick()
+        screen.onNodeWithText(answer).assertDoesNotExist()
+        assertEquals(0, model.readingCount)
+    }
+
     @Test fun touchSwitchesTheSubjectBookOrFilterFromTheStartOfTheSwipe() {
         val model = screen.activity.model
         screen.onNodeWithTag("subject:english").performScrollTo().performTouchInput {

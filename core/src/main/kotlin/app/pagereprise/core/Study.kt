@@ -37,7 +37,8 @@ data class Body(
     val solution: String = "",
     val pictures: List<String> = emptyList(),
     val answers: List<String> = emptyList(),
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val readings: Readings? = null
 ) {
     fun checked(): Body {
         require(title.isNotBlank() || pictures.isNotEmpty()) { "请填写题干或添加题图" }
@@ -45,6 +46,7 @@ data class Body(
         require(pictures.size <= 16 && answers.size <= 16) { "题图和答案图各最多 16 张" }
         require(tags.size <= 24 && tags.all { it.isNotBlank() && it.length <= 60 })
         require((pictures + answers).all { it.matches(Regex("[0-9a-f]{64}")) }) { "图片标识无效" }
+        checkReadings()
         return this
     }
 }
@@ -181,7 +183,8 @@ object Library {
         val moves = heads(events.filter { it.kind == Kind.MOVE })
         val edits = heads(events.filter { it.kind == Kind.EDIT })
         val subject = moves.map { it.value }.distinct().singleOrNull() ?: creation.value
-        val body = edits.mapNotNull { it.body }.distinct().singleOrNull() ?: requireNotNull(creation.body)
+        val chosen = edits.takeIf { versions -> versions.map { it.body }.distinct().size == 1 }?.firstOrNull() ?: creation
+        val body = bodyWithReadings(chosen, creation, events)
         val rounds = events.filter { it.kind == Kind.REVIEW || it.kind == Kind.UNDO }.groupBy { it.base }
         var plan = Plan(0, 0, StudyDays.date(creation.at).plusDays(1))
         var round = "start"

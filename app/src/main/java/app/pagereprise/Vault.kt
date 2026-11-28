@@ -22,17 +22,22 @@ class Vault(context: Context) {
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }
-    fun read(): Session? {
-        val box = prefs.getString("session", null)?.split(".") ?: return null
+    fun read(): Session? = secret("session")?.let { Codec.json.fromJson(it, Session::class.java) }
+    fun write(session: Session?) = save("session", session?.let(Codec.json::toJson))
+    fun readingKey(owner: String) = secret("deepseek-" + digest(owner.toByteArray()))
+    fun saveReadingKey(owner: String, value: String?) = save("deepseek-" + digest(owner.toByteArray()), value)
+
+    private fun secret(name: String): String? {
+        val box = prefs.getString(name, null)?.split(".") ?: return null
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(box.first(), Base64.NO_WRAP)))
-        return Codec.json.fromJson(String(cipher.doFinal(Base64.decode(box.last(), Base64.NO_WRAP)), Charsets.UTF_8), Session::class.java)
+        return String(cipher.doFinal(Base64.decode(box.last(), Base64.NO_WRAP)), Charsets.UTF_8)
     }
-    fun write(session: Session?) {
-        if (session == null) { check(prefs.edit().remove("session").commit()); return }
+    private fun save(name: String, value: String?) {
+        if (value == null) { check(prefs.edit().remove(name).commit()); return }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val box = listOf(cipher.iv, cipher.doFinal(Codec.json.toJson(session).toByteArray()))
+        val box = listOf(cipher.iv, cipher.doFinal(value.toByteArray()))
             .joinToString(".") { Base64.encodeToString(it, Base64.NO_WRAP) }
-        check(prefs.edit().putString("session", box).commit())
+        check(prefs.edit().putString(name, box).commit())
     }
 }

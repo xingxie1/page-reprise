@@ -10,6 +10,8 @@ kotlin {
 application { mainClass.set("app.pagereprise.DesktopKt") }
 dependencies {
     implementation(project(":core"))
+    implementation("org.scilab.forge:jlatexmath:1.0.7")
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.24.0")
     implementation("org.jetbrains.compose.desktop:desktop-jvm-windows-x64:1.7.3")
     implementation("org.jetbrains.compose.material3:material3-desktop:1.7.3")
     implementation("androidx.room:room-common:2.6.1")

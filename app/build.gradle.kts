@@ -27,6 +27,8 @@ kotlin.sourceSets.getByName("main").kotlin.srcDir(rootProject.file("shared/src/m
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {
     implementation(project(":core"))
+    implementation("ru.noties:jlatexmath-android:0.2.0")
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.24.0")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")

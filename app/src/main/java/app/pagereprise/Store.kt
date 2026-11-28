@@ -21,6 +21,8 @@ interface Journal : StudyJournal {
     override suspend fun existing(owner: String, id: String): Entry?
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     override suspend fun put(entry: Entry): Long
+    @Query("UPDATE operations SET payload = :payload WHERE owner = :owner AND eventId = :id")
+    override suspend fun updatePayload(owner: String, id: String, payload: String)
     @Query("UPDATE operations SET pending = 0 WHERE owner = :owner AND eventId IN (:ids)")
     override suspend fun sent(owner: String, ids: List<String>)
     @Query("SELECT * FROM drafts WHERE owner = :owner ORDER BY savedAt DESC")

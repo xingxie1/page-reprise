@@ -98,6 +98,9 @@ class Store(private val directory: File) : JournalStore({ Media(directory, it) }
             val count = update("INSERT OR IGNORE INTO operations VALUES(?,?,?,?,?)", entry.owner, entry.eventId, entry.cardId, entry.payload, entry.pending)
             return if (count == 0) -1L else 1L
         }
+        override suspend fun updatePayload(owner: String, id: String, payload: String) {
+            update("UPDATE operations SET payload=? WHERE owner=? AND eventId=?", payload, owner, id)
+        }
         override suspend fun sent(owner: String, ids: List<String>) {
             if (ids.isEmpty()) return
             val placeholders = ids.joinToString(",") { "?" }

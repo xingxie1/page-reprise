@@ -90,18 +90,20 @@ internal fun rememberImagePicker(receive: (List<InputFile>) -> Unit): () -> Unit
 }
 
 @Composable
-internal fun rememberBackupExporter(receive: (OutputFile) -> Unit): (String) -> Unit {
+internal fun rememberDocumentExporter(markdown: Boolean = false, receive: (OutputFile) -> Unit): (String) -> Unit {
     val parent = LocalDesktop.current?.window
+    val extension = if (markdown) "md" else "zip"
+    val title = if (markdown) "导出阅读稿" else "导出整库备份"
     return { name ->
         val chooser = JFileChooser().apply {
-            dialogTitle = "导出整库备份"
+            dialogTitle = title
             selectedFile = File(name)
-            fileFilter = FileNameExtensionFilter("ZIP 备份", "zip")
+            fileFilter = FileNameExtensionFilter(if (markdown) "Markdown" else "ZIP 备份", extension)
         }
         if (chooser.showSaveDialog(parent) == JFileChooser.APPROVE_OPTION) {
             val chosen = chooser.selectedFile
-            val file = if (chosen.extension.equals("zip", true)) chosen else File(chosen.parentFile, chosen.name + ".zip")
-            if (!file.exists() || JOptionPane.showConfirmDialog(parent, "替换已有备份「" + file.name + "」？", "导出备份",
+            val file = if (chosen.extension.equals(extension, true)) chosen else File(chosen.parentFile, chosen.name + "." + extension)
+            if (!file.exists() || JOptionPane.showConfirmDialog(parent, "替换已有文件「" + file.name + "」？", title,
                     JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) receive(OutputFile { writeAtomically(file, it) })
         }
     }
