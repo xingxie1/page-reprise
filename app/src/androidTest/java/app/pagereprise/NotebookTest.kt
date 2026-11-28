@@ -80,6 +80,7 @@ class NotebookTest {
 
     @Test fun touchSwitchesTheSubjectBookOrFilterFromTheStartOfTheSwipe() {
         val model = screen.activity.model
+        screen.onNodeWithTag("home-list").performScrollToNode(hasTestTag("subject:english"))
         screen.onNodeWithTag("subject:english").performScrollTo().performTouchInput {
             click(Offset(width * .78f, height * .18f))
         }
@@ -122,7 +123,9 @@ class NotebookTest {
         screen.onNodeWithTag("choose-book:false").performClick()
         screen.onNodeWithTag("filter:全部").assertIsSelected()
         screen.onNodeWithText("‹ 返回").performClick()
-        screen.onNodeWithTag("book:english:true").performScrollTo().performTouchInput { click(center) }
+        screen.waitUntil(10000) { model.page == Page.HOME }
+        screen.onNodeWithTag("home-list").performScrollToNode(hasTestTag("book:english:true"))
+        screen.onNodeWithTag("book:english:true").performTouchInput { click(center) }
         screen.onNodeWithTag("choose-book:true").assertIsSelected()
         screen.runOnIdle { assertTrue(model.focus) }
     }
