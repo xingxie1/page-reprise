@@ -112,10 +112,15 @@ class DesktopNotebookTest {
     }
 
     @Test fun filterCurlFollowsThePointerAndOnlyPaintsInsideTheResultList() {
-        ui.onNodeWithTag("book:math:false").performClick()
+        val card = Event.create("math", Body(title = "明天复习的题", solution = "预览中的解法"))
+        runBlocking { platform.store.merge(model.owner, listOf(card), true) }
+        ui.runOnIdle { model.foreground(); model.openBook("math", false) }
+        ui.waitUntil(10000) { model.book.size == 1 }
+        ui.onNodeWithText("#001  明天复习的题").performClick()
+        ui.onNodeWithText("核对答案与错因").performScrollTo().performClick()
         val list = ui.onNodeWithTag("book-list")
         val pane = ui.onNodeWithTag("book-pages")
-        val preview = ui.onNodeWithText("选一道题，在这里预览。")
+        val preview = ui.onNodeWithText("预览中的解法")
         fun pixels(node: SemanticsNodeInteraction): IntArray {
             val img = node.captureToImage()
             return IntArray(img.width * img.height).also { img.readPixels(it) }
@@ -147,6 +152,7 @@ class DesktopNotebookTest {
         }
         checkFold(true)
         ui.onNodeWithTag("filter:已到期").assertIsSelected()
+        preview.assertExists()
         checkFold(false)
         ui.onNodeWithTag("filter:全部").assertIsSelected()
         list.performTouchInput { swipe(Offset(width * .7f, height * .8f), Offset(width * .7f - 22f, height * .8f)) }

@@ -385,15 +385,16 @@ class StudyModel(private val platform: StudyPlatform, private val scope: Corouti
         change(if (fromAnswers) body.copy(answers = from, pictures = moved) else body.copy(pictures = from, answers = moved))
         imported(!fromAnswers, listOf(moved.last()))
     }
-    fun cropPhoto(answer: Boolean, position: Int, bounds: List<Float>) = perform {
+    fun cropPhoto(answer: Boolean, position: Int, bounds: List<Float>) {
         val ticket = readingTicket()
-        val body = editor.body
-        val images = (if (answer) body.answers else body.pictures).toMutableList()
-        val files = media
-        images[position] = withContext(Dispatchers.IO) { files.crop(images[position], bounds[0], bounds[1], bounds[2], bounds[3]) }
-        val current = editor.body
-        change(if (answer) current.copy(answers = images) else current.copy(pictures = images))
-        imported(answer, listOf(images[position]), ticket)
+        perform {
+            val images = editor.body.pages(answer).toMutableList()
+            val files = media
+            images[position] = withContext(Dispatchers.IO) { files.crop(images[position], bounds[0], bounds[1], bounds[2], bounds[3]) }
+            val current = editor.body
+            change(if (answer) current.copy(answers = images) else current.copy(pictures = images))
+            imported(answer, listOf(images[position]), ticket)
+        }
     }
     fun saveDraft() = perform {
         require(editor.card == null)
